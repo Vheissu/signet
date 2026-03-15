@@ -18,6 +18,12 @@ Signet is a Chrome/Chromium browser extension that lets you manage Hive accounts
   - [API Reference](#api-reference)
   - [Response Format](#response-format)
   - [Backward Compatibility with Hive Keychain](#backward-compatibility-with-hive-keychain)
+- [QR Codes and Payment Links](#qr-codes-and-payment-links)
+- [Biometric Unlock](#biometric-unlock)
+- [Notification Center](#notification-center)
+- [Hive Engine Tokens](#hive-engine-tokens)
+- [Transaction History](#transaction-history)
+- [Account Key Management](#account-key-management)
 - [Password Manager Import](#password-manager-import)
 - [Project Structure](#project-structure)
 - [Tech Stack](#tech-stack)
@@ -29,17 +35,24 @@ Signet is a Chrome/Chromium browser extension that lets you manage Hive accounts
 
 | Category | Capabilities |
 |---|---|
-| **Wallet** | View HIVE, HBD, and Hive Power balances with live USD conversion. Hive Engine token support. |
+| **Wallet** | View HIVE, HBD, and Hive Power balances with live USD conversion. Full Hive Engine L2 token support with per-token price charts. |
 | **Transfers** | Send HIVE and HBD to any account. Memo support (plaintext and encrypted). |
+| **Hive Engine Tokens** | View balances, transfer, stake, unstake, and delegate any Hive Engine token. Dedicated Tokens tab with D3.js price charts per token. |
+| **QR Codes / Payment Links** | Receive page generates QR codes. Two modes: Signet-native (`hive://` URI) and Hivesigner mobile URL. Scan or paste a link to auto-fill the Send form. |
 | **Staking** | Power Up (HIVE to HP) and Power Down (HP to HIVE). |
 | **Delegation** | Delegate and undelegate Hive Power to any account. |
 | **Governance** | Vote for witnesses, approve/reject proposals (DHF), and set a voting proxy. |
 | **Savings** | Deposit and withdraw from on-chain savings accounts. |
 | **Swap** | Convert between HIVE and HBD on-chain. |
 | **Multi-Account** | Manage unlimited Hive accounts. Switch between them instantly. |
-| **dApp Integration** | Full `window.signet` API for web applications. Backward-compatible `window.hive_keychain` shim. |
+| **Account Key Editing** | Add or remove individual keys (posting, active, memo, owner) after initial account creation. |
+| **dApp Integration** | Full `window.signet` API for web applications, including VSC/Magi smart contract support via `requestSignedCall`. Backward-compatible `window.hive_keychain` shim. |
+| **VSC/Magi Smart Contracts** | `requestSignedCall()` lets dApps invoke VSC/Magi smart contract methods, broadcast as `custom_json` operations. |
+| **Biometric Unlock** | WebAuthn-based Touch ID / Windows Hello support. Credential stored in the platform's Secure Enclave. |
+| **Notification Center** | Monitors incoming transfers, claimable rewards, power down payments, savings interest, and delegation changes. Bell icon with unread badge. |
+| **Transaction History** | Financial operations only (no votes/comments noise). Hive Engine operations labeled as "Token Sent", "Token Staked", etc. Filter by type. Each transaction links to Hive Hub. |
 | **Auto-Lock** | Configurable idle timer (default 10 minutes). Wallet locks automatically when the browser is idle or the screen is locked. |
-| **Transaction History** | Browse past transfers, votes, and other operations. |
+| **Nav State Persistence** | Popup remembers which page you were on when it closes. Reopening the popup restores your position. |
 | **Resource Credits** | Live display of voting power and resource credit percentages. |
 | **Configurable RPC** | Choose from multiple Hive API nodes or add your own. |
 | **Theme Support** | Dark and light mode. |
@@ -268,6 +281,35 @@ const response = await window.signet.requestCustomJson(
   }),
   true
 );
+```
+
+---
+
+#### `requestSignedCall(username, method, params, typeWif)`
+
+Invoke a VSC/Magi smart contract method. Under the hood, this broadcasts a `custom_json` operation with the specified method and parameters, signed with the chosen key type. This is the primary way dApps interact with VSC (Virtual Smart Contracts) and Magi smart contract layers on Hive.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `username` | `string` | Account calling the smart contract |
+| `method` | `string` | Smart contract method name (e.g. `"deposit"`, `"withdraw"`, `"swap"`) |
+| `params` | `string` | JSON-encoded parameters for the method |
+| `typeWif` | `string` | Key type to sign with: `"posting"` (default), `"active"`, or `"memo"` |
+
+```javascript
+// Example: call a VSC smart contract method
+const response = await window.signet.requestSignedCall(
+  'alice',
+  'deposit',
+  JSON.stringify({ amount: '100.000', token: 'HIVE' }),
+  'active'
+);
+
+if (response.success) {
+  console.log('Smart contract call broadcast:', response.result);
+} else {
+  console.error('Call failed:', response.error);
+}
 ```
 
 ---
@@ -505,15 +547,166 @@ window.hive_keychain.requestTransfer(
 );
 ```
 
+The `requestSignedCall` method is also available through the `hive_keychain` shim for dApps that use the callback pattern:
+
+```javascript
+window.hive_keychain.requestSignedCall(
+  'alice',
+  'deposit',
+  JSON.stringify({ amount: '100.000', token: 'HIVE' }),
+  'active',
+  function(response) {
+    console.log(response);
+  }
+);
+```
+
 Signet also fires the `hive_keychain_installed` event for dApps that listen for it.
 
 The `window.signet` Promise-based API is recommended for new integrations, as it supports `async`/`await` and provides a cleaner developer experience.
 
 ---
 
+## QR Codes and Payment Links
+
+Signet supports QR codes and payment links for receiving Hive, with two URI formats designed for different use cases.
+
+### Signet-Native URI (`hive://`)
+
+Used for desktop Signet-to-Signet transfers. The Receive page generates a QR code encoding a `hive://` URI:
+
+```
+hive://transfer?to=alice&amount=10.000&currency=HIVE&memo=Thanks
+```
+
+When a sender pastes this link into the Send field, Signet auto-fills the recipient, amount, currency, and memo. Camera-based QR scanning is also supported.
+
+### Hivesigner Mobile URL
+
+For mobile users who do not have the extension, the Receive page can generate a Hivesigner URL:
+
+```
+https://hivesigner.com/sign/transfer?to=alice&amount=10.000%20HIVE&memo=Thanks
+```
+
+Scanning this QR code on a phone opens the Hivesigner web interface in the mobile browser, where the sender can sign the transfer without needing any extension or app installed.
+
+### How It Works
+
+1. Go to the **Receive** page and optionally fill in a requested amount, currency, and memo.
+2. Signet generates a QR code (and a copyable link) for the transfer request.
+3. The sender scans the QR code with a camera or pastes the link into their Send field.
+4. If the link is a `hive://` URI, Signet parses it and auto-fills the Send form.
+5. If the link is a Hivesigner URL, the sender's mobile browser opens Hivesigner for signing.
+
+---
+
+## Biometric Unlock
+
+Signet supports unlocking with Touch ID (macOS), Windows Hello, or any other platform authenticator via the **WebAuthn** (Web Authentication) API.
+
+### How It Works
+
+1. **Enrollment**: After unlocking the wallet with your master password, enable biometric unlock in Settings. Signet creates a WebAuthn credential (triggering the Touch ID / Windows Hello prompt), generates a random 256-bit AES key, encrypts your wallet password with that key, and stores the encrypted password and credential reference in `chrome.storage.local`.
+
+2. **Unlock**: On the lock screen, choose "Unlock with fingerprint." Signet calls `navigator.credentials.get()`, which triggers the biometric prompt. On success, it decrypts the stored password and unlocks the wallet normally.
+
+### Security Notes
+
+- The WebAuthn private key material never leaves the platform authenticator (Secure Enclave on macOS, TPM on Windows).
+- The wallet password is encrypted at rest with AES-256-GCM using a unique IV, even within the biometric storage.
+- Biometric enrollment can be removed at any time from Settings, which deletes the stored credential and encrypted password.
+- Platform authenticator attachment is enforced (`authenticatorAttachment: 'platform'`), meaning only built-in biometrics are accepted -- no external USB keys.
+
+---
+
+## Notification Center
+
+Signet includes a notification system that monitors account activity and surfaces actionable alerts. A bell icon in the header shows an unread badge when new notifications arrive.
+
+### Monitored Events
+
+| Event | Description |
+|---|---|
+| **Incoming transfers** | Notifies when another account sends you HIVE or HBD. |
+| **Claimable rewards** | Reminds you when author/curation rewards are available to claim. |
+| **Power down payments** | Alerts when the next weekly power down payment is approaching. |
+| **Savings interest** | Shows your HBD savings balance and estimated monthly interest earnings. |
+| **Delegation changes** | Notifies when another account delegates HP to you. |
+
+The monitor polls once per minute. Notifications are stored locally (up to 50) and can be marked as read individually or all at once, or cleared entirely. Tapping a notification navigates to the relevant page (e.g., tapping a transfer notification opens the History page).
+
+---
+
+## Hive Engine Tokens
+
+Signet provides full support for Hive Engine (Layer 2) tokens alongside native HIVE and HBD.
+
+### Capabilities
+
+- **Balances**: View liquid, staked, delegated-in, delegated-out, and pending-unstake balances for every token you hold.
+- **Transfers**: Send any Hive Engine token to another Hive account with an optional memo.
+- **Staking**: Stake tokens to earn rewards or participate in governance.
+- **Unstaking**: Begin unstaking tokens (subject to the token's cooldown period).
+- **Delegation**: Delegate staked tokens to another account, or undelegate.
+- **Price Charts**: Each token's detail page shows a D3.js-rendered 24-hour price chart with HIVE-denominated pricing, gradient fill, grid lines, and axis labels.
+- **USD Valuation**: Total token value is calculated as token quantity multiplied by the token's HIVE price multiplied by the HIVE/USD rate.
+
+### Dedicated Tokens Tab
+
+The wallet dashboard includes a Tokens tab listing all Hive Engine tokens held by the active account, sorted by total HIVE value. Tapping a token opens its detail page with the price chart, full balance breakdown, and action buttons for transfer, stake, unstake, and delegate.
+
+All Hive Engine write operations (transfer, stake, unstake, delegate, undelegate) are broadcast as `custom_json` operations with the id `ssc-mainnet-hive` and require the active key.
+
+---
+
+## Transaction History
+
+The History page displays a filtered view of financial operations for the active account.
+
+### What Is Shown
+
+The history focuses on financially relevant operations and excludes noise like votes and comments. Supported operation types include:
+
+- **L1 operations**: Transfers (sent/received), Power Up, Power Down, delegations, reward claims (author, curation, witness), savings deposits/withdrawals, conversions, and filled orders.
+- **Hive Engine operations**: Labeled with human-readable names -- "Token Sent", "Token Received", "Token Staked", "Token Unstaked", "Token Delegated", "Token Undelegated", "Market Buy", "Market Sell".
+
+### Filtering
+
+Scrollable filter pills at the top let you narrow the view by category: All, Transfers, Tokens (Hive Engine), Power, Delegation, Rewards, and Savings. Each filter shows a count badge so you can see at a glance how many operations exist in each category.
+
+### Hive Hub Links
+
+Every transaction row includes a link icon (visible on hover) that opens the transaction on [Hive Hub](https://hub.peakd.com) (`hub.peakd.com/tx/<txid>`) in a new tab, providing full on-chain details.
+
+---
+
+## Account Key Management
+
+After adding an account to Signet, you can add or remove individual keys at any time through the **Edit Account** page (accessible from Settings or the account menu).
+
+### Capabilities
+
+- View which key roles (posting, active, memo, owner) are currently configured, with a status indicator for each.
+- **Add a key**: Select a missing role, paste the private key, and Signet validates the WIF format and verifies that it matches the expected role by comparing against the account's on-chain public keys. If the key belongs to a different role than selected, Signet tells you which role it actually is.
+- **Remove a key**: Delete a key you no longer need. Signet prevents you from removing the last remaining key on an account.
+
+Each key role is explained inline: Posting (vote, comment, follow), Active (transfer, stake, delegate), Memo (encrypt/decrypt messages), Owner (change keys, recover account).
+
+---
+
 ## Password Manager Import
 
-Signet supports importing private keys that you have stored in a password manager. Export your vault as CSV and locate the Hive private keys (they start with `5` and are 51 characters long, in WIF format).
+Signet supports importing private keys that you have stored in a password manager. Export your vault as CSV and Signet will automatically detect the format and extract Hive credentials.
+
+### Supported Formats
+
+Signet auto-detects exports from **1Password**, **Bitwarden**, and **LastPass** by inspecting the CSV column headers. Generic CSV files are also supported if they contain recognizable Hive-related entries.
+
+The parser looks for:
+- WIF private keys (51-character base58 strings starting with `5`)
+- Hive master passwords (starting with `P5`)
+- Labeled keys in notes fields (e.g., "Posting Key: 5xxx...")
 
 ### 1Password
 
@@ -561,6 +754,8 @@ signet/
     inpage/
       index.ts                 # Injected API: window.signet + window.hive_keychain
     core/
+      biometric/
+        webauthn.ts            # WebAuthn biometric enrollment and authentication
       crypto/
         encryption.ts          # AES-256-GCM encryption via Web Crypto API
         hive-keys.ts           # Hive key validation and role identification
@@ -568,6 +763,14 @@ signet/
         client.ts              # Hive RPC client (dhive wrapper)
         operations.ts          # Amount parsing, VESTS/HP conversion, utilities
         rpc.ts                 # RPC node management and failover
+      hive-engine/
+        api.ts                 # Hive Engine sidechain API client
+      import/
+        csv-parser.ts          # Password manager CSV import (1Password, Bitwarden, LastPass)
+      notifications/
+        monitor.ts             # Notification polling and event detection
+      qr/
+        index.ts               # QR code generation, scanning, and URI parsing
       storage/
         secure-storage.ts      # Chrome storage API wrapper (local + session)
       types/
@@ -576,10 +779,10 @@ signet/
       main.tsx                 # React entry point
       App.tsx                  # Root component and page router
       store/
-        index.ts               # Zustand state management
+        index.ts               # Zustand state management (with nav persistence)
       components/
         layout/
-          Header.tsx           # App header with account switcher
+          Header.tsx           # App header with account switcher and notification bell
           BottomNav.tsx         # Bottom navigation bar
           PageContainer.tsx    # Page layout wrapper
         ui/
@@ -593,10 +796,10 @@ signet/
           Toast.tsx            # Toast notifications
         wallet/
           ActionButtons.tsx    # Quick action buttons (Send, Receive, Stake, etc.)
-          BalanceCard.tsx      # Account balance display
+          BalanceCard.tsx       # Account balance display
           ResourceBar.tsx      # Voting power and RC bar
           TokenList.tsx        # Hive Engine token list
-          TransactionItem.tsx  # Transaction history row
+          TransactionItem.tsx  # Transaction history row (with Hive Hub links)
       hooks/
         useAccounts.ts         # Account management hook
         useAuth.ts             # Authentication hook
@@ -604,18 +807,20 @@ signet/
       pages/
         Welcome.tsx            # First-run welcome screen
         CreatePassword.tsx     # Master password creation
-        Login.tsx              # Unlock screen
+        Login.tsx              # Unlock screen (with biometric option)
         Dashboard.tsx          # Main wallet dashboard
-        Send.tsx               # Send HIVE/HBD
-        Receive.tsx            # Receive (show address/QR)
+        Send.tsx               # Send HIVE/HBD (with QR/link auto-fill)
+        Receive.tsx            # Receive (QR code generation)
         Staking.tsx            # Power Up / Power Down
         Delegation.tsx         # HP delegation management
         Governance.tsx         # Witness voting and proposals
         Savings.tsx            # Savings deposits and withdrawals
         Swap.tsx               # HIVE <-> HBD conversion
-        History.tsx            # Transaction history
+        History.tsx            # Transaction history (with filters)
         Settings.tsx           # Extension settings
         AddAccount.tsx         # Add/import a Hive account
+        EditAccount.tsx        # Add/remove individual keys on an existing account
+        TokenDetail.tsx        # Hive Engine token detail with D3.js price chart
       styles/
         index.css              # Tailwind CSS v4 entry point
     shims/
@@ -639,9 +844,13 @@ signet/
 | **esbuild** | Build tool (background, content, inpage scripts) | 0.24 |
 | **Tailwind CSS** | Styling | v4.0 |
 | **Zustand** | State management | 5.0 |
+| **D3.js** | Token price charts | 7.x |
 | **@hiveio/dhive** | Hive blockchain client | 1.3 |
 | **Lucide React** | Icons | 0.468 |
 | **Web Crypto API** | Encryption (AES-256-GCM, PBKDF2) | Native |
+| **WebAuthn API** | Biometric authentication (Touch ID, Windows Hello) | Native |
+| **qrcode** | QR code generation | -- |
+| **jsQR** | QR code scanning (image and camera) | -- |
 | **Chrome Extensions MV3** | Extension platform | Manifest V3 |
 
 ---

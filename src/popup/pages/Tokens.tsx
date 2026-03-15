@@ -57,8 +57,36 @@ export function Tokens() {
       <Header />
 
       <div className="flex-1 overflow-hidden flex flex-col">
+        {/* Price ticker */}
+        {!loading && tokens.length > 0 && (
+          <div className="border-b border-border overflow-hidden">
+            <div className="flex gap-4 px-4 py-2 overflow-x-auto no-scrollbar">
+              {tokens.slice(0, 10).map((t) => {
+                const price = t.price;
+                return (
+                  <button
+                    key={t.balance.symbol}
+                    onClick={() =>
+                      navigateTo('tokenDetail' as any, {
+                        symbol: t.balance.symbol,
+                        tokenData: t,
+                      })
+                    }
+                    className="flex items-center gap-2 flex-shrink-0 px-2.5 py-1.5 rounded-xl hover:bg-surface-elevated transition-colors"
+                  >
+                    <span className="text-[11px] font-bold text-text-primary">{t.balance.symbol}</span>
+                    <span className="text-[11px] font-semibold text-text-tertiary">
+                      {price > 0 ? price.toFixed(price < 0.01 ? 6 : 4) : '---'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Summary bar */}
-        <div className="px-4 pt-4 pb-2">
+        <div className="px-4 pt-3 pb-2">
           <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-xs text-text-secondary font-medium">Hive Engine Tokens</p>

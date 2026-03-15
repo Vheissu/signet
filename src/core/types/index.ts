@@ -64,7 +64,8 @@ export type Page =
   | 'accountManager'
   | 'importKeys'
   | 'editAccount'
-  | 'tokenDetail';
+  | 'tokenDetail'
+  | 'contacts';
 
 export interface NavigationEntry {
   page: Page;

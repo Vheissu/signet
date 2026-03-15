@@ -9,6 +9,7 @@ import {
   Key,
   Server,
   Fingerprint,
+  Users,
 } from 'lucide-react';
 import { PageContainer } from '@/popup/components/layout/PageContainer';
 import { Card } from '@/popup/components/ui/Card';
@@ -134,6 +135,11 @@ export function Settings() {
               icon={<Key size={16} />}
               label="Add Account"
               onClick={() => navigateTo('addAccount')}
+            />
+            <SettingsItem
+              icon={<Users size={16} />}
+              label="Contacts"
+              onClick={() => navigateTo('contacts')}
             />
           </Card>
         </div>

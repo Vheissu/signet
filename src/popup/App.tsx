@@ -22,6 +22,7 @@ import { ImportKeys } from '@/popup/pages/ImportKeys';
 import { EditAccount } from '@/popup/pages/EditAccount';
 import { Tokens } from '@/popup/pages/Tokens';
 import { TokenDetail } from '@/popup/pages/TokenDetail';
+import { Contacts } from '@/popup/pages/Contacts';
 
 import type { Page } from '@/core/types';
 
@@ -45,6 +46,7 @@ const pages: Record<Page, React.ComponentType> = {
   tokenDetail: TokenDetail,
   importKeys: ImportKeys,
   editAccount: EditAccount,
+  contacts: Contacts,
 };
 
 export function App() {

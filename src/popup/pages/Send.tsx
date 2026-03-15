@@ -1,20 +1,23 @@
-import { useState, useRef } from 'react';
-import { ArrowUpRight, AlertTriangle, ScanLine } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { ArrowUpRight, AlertTriangle, ScanLine, Users } from 'lucide-react';
 import { PageContainer } from '@/popup/components/layout/PageContainer';
 import { Input } from '@/popup/components/ui/Input';
 import { Button } from '@/popup/components/ui/Button';
 import { Card } from '@/popup/components/ui/Card';
+import { Avatar } from '@/popup/components/ui/Avatar';
 import { useStore } from '@/popup/store';
 import { useHive } from '@/popup/hooks/useHive';
 import { useAccounts } from '@/popup/hooks/useAccounts';
 import { broadcastTransfer } from '@/core/hive/client';
 import { getAccount } from '@/core/hive/client';
 import { scanQRFromImage, parseTransferUri } from '@/core/qr';
+import { getContacts, recordTransaction, type Contact } from '@/core/contacts';
 
 export function Send() {
   const activeAccountName = useStore((s) => s.activeAccountName);
   const addToast = useStore((s) => s.addToast);
   const goBack = useStore((s) => s.goBack);
+  const navigateTo = useStore((s) => s.navigateTo);
   const { balances, formatNumber } = useHive();
   const { getDecryptedKey } = useAccounts();
   const pageParams = useStore((s) => s.pageParams);
@@ -27,8 +30,14 @@ export function Send() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [recipientError, setRecipientError] = useState('');
   const qrFileRef = useRef<HTMLInputElement>(null);
+  const [recentContacts, setRecentContacts] = useState<Contact[]>([]);
+  const [showContacts, setShowContacts] = useState(false);
 
   const maxAmount = currency === 'HIVE' ? balances.hive : balances.hbd;
+
+  useEffect(() => {
+    getContacts().then((c) => setRecentContacts(c.slice(0, 5)));
+  }, []);
 
   const handleScanQR = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -78,6 +87,9 @@ export function Send() {
 
       await broadcastTransfer(activeAccountName, clean, amountStr, memo, activeKey);
 
+      // Auto-save as contact
+      await recordTransaction(clean);
+
       addToast(`Sent ${amountStr} to @${clean}`, 'success');
       goBack();
     } catch (err: any) {
@@ -126,16 +138,60 @@ export function Send() {
           error={recipientError}
           icon={<span className="text-text-tertiary font-bold text-sm">@</span>}
           rightElement={
-            <button
-              type="button"
-              onClick={() => qrFileRef.current?.click()}
-              className="p-1 rounded-lg text-text-tertiary hover:text-hive hover:bg-hive/10 transition-colors"
-              title="Scan QR code image"
-            >
-              <ScanLine size={16} />
-            </button>
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => setShowContacts(!showContacts)}
+                className="p-1 rounded-lg text-text-tertiary hover:text-info hover:bg-info/10 transition-colors"
+                title="Pick from contacts"
+              >
+                <Users size={15} />
+              </button>
+              <button
+                type="button"
+                onClick={() => qrFileRef.current?.click()}
+                className="p-1 rounded-lg text-text-tertiary hover:text-hive hover:bg-hive/10 transition-colors"
+                title="Scan QR code image"
+              >
+                <ScanLine size={15} />
+              </button>
+            </div>
           }
         />
+
+        {/* Recent contacts */}
+        {showContacts && recentContacts.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto py-1 -mt-2">
+            {recentContacts.map((c) => (
+              <button
+                key={c.username}
+                onClick={() => {
+                  setRecipient(c.username);
+                  setShowContacts(false);
+                  setRecipientError('');
+                }}
+                className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl bg-surface-elevated border border-border/50 hover:border-hive/30 transition-colors flex-shrink-0"
+              >
+                <Avatar username={c.username} size="sm" />
+                <span className="text-[10px] font-medium text-text-secondary truncate max-w-[56px]">
+                  {c.label || `@${c.username}`}
+                </span>
+              </button>
+            ))}
+            <button
+              onClick={() => {
+                setShowContacts(false);
+                navigateTo('contacts' as any);
+              }}
+              className="flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl bg-surface-elevated border border-border/50 hover:border-hive/30 transition-colors flex-shrink-0"
+            >
+              <div className="w-7 h-7 rounded-full bg-hive/10 flex items-center justify-center">
+                <Users size={12} className="text-hive" />
+              </div>
+              <span className="text-[10px] font-medium text-hive">All</span>
+            </button>
+          </div>
+        )}
 
         {/* Amount */}
         <div>
