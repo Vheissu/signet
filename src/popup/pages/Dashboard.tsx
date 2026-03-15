@@ -35,37 +35,24 @@ export function Dashboard() {
   }, []);
 
   async function checkBiometricPrompt() {
-    // Only show if: biometric is available, not yet enrolled, and user hasn't dismissed
     try {
       const available = await isBiometricAvailable();
       if (!available) return;
-
       const enrolled = await isBiometricEnrolled();
       if (enrolled) return;
-
-      // Check if user previously dismissed
       if (typeof chrome !== 'undefined' && chrome?.storage) {
         const result = await chrome.storage.local.get('biometric_dismissed');
         if (result.biometric_dismissed) return;
       }
-
       setShowBioPrompt(true);
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
   const handleEnrollBiometric = async () => {
     if (!password) return;
     setIsEnrolling(true);
-
     const success = await enrollBiometric(password);
-    if (success) {
-      addToast('Fingerprint unlock enabled', 'success');
-    } else {
-      addToast('Could not enable fingerprint unlock', 'error');
-    }
-
+    addToast(success ? 'Fingerprint unlock enabled' : 'Could not enable fingerprint unlock', success ? 'success' : 'error');
     setShowBioPrompt(false);
     setIsEnrolling(false);
   };
@@ -76,15 +63,12 @@ export function Dashboard() {
       if (typeof chrome !== 'undefined' && chrome?.storage) {
         await chrome.storage.local.set({ biometric_dismissed: true });
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
   const handleClaimRewards = async () => {
     if (!activeAccountName || !activeAccountData) return;
     setIsClaiming(true);
-
     try {
       const postingKey = await getDecryptedKey('posting');
       if (!postingKey) {
@@ -92,7 +76,6 @@ export function Dashboard() {
         setIsClaiming(false);
         return;
       }
-
       await broadcastClaimRewards(
         activeAccountName,
         activeAccountData.reward_hive_balance as any,
@@ -100,13 +83,11 @@ export function Dashboard() {
         activeAccountData.reward_vesting_balance as any,
         postingKey
       );
-
       addToast('Rewards claimed successfully!', 'success');
       await refreshAccountData();
     } catch (err: any) {
       addToast(err.message || 'Failed to claim rewards', 'error');
     }
-
     setIsClaiming(false);
   };
 
@@ -116,7 +97,7 @@ export function Dashboard() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="px-4 py-4 space-y-4">
-          {/* Biometric enrollment prompt */}
+          {/* Biometric prompt */}
           {showBioPrompt && (
             <div className="flex items-center gap-3 bg-surface-elevated border border-hive/15 rounded-2xl px-4 py-3 animate-fade-in">
               <div className="w-9 h-9 rounded-xl bg-hive/12 flex items-center justify-center flex-shrink-0">
@@ -127,27 +108,23 @@ export function Dashboard() {
                 <p className="text-[10px] text-text-tertiary">Use Touch ID to unlock faster</p>
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                <Button
-                  size="sm"
-                  onClick={handleEnrollBiometric}
-                  loading={isEnrolling}
-                >
+                <Button size="sm" onClick={handleEnrollBiometric} loading={isEnrolling}>
                   Enable
                 </Button>
-                <button
-                  onClick={handleDismissBioPrompt}
-                  className="p-1.5 rounded-lg text-text-tertiary hover:text-text-secondary hover:bg-surface-overlay transition-colors"
-                >
+                <button onClick={handleDismissBioPrompt} className="p-1.5 rounded-lg text-text-tertiary hover:text-text-secondary hover:bg-surface-overlay transition-colors">
                   <X size={14} />
                 </button>
               </div>
             </div>
           )}
 
-          {/* Portfolio balance card */}
+          {/* 1. Portfolio balance — always visible at top */}
           <BalanceCard />
 
-          {/* Claim rewards banner */}
+          {/* 2. Quick actions — always visible, no scrolling needed */}
+          <ActionButtons />
+
+          {/* 3. Claim rewards banner */}
           {rewards.hasPending && (
             <div className="flex items-center justify-between bg-success/8 border border-success/15 rounded-2xl px-4 py-3">
               <div className="flex items-center gap-3">
@@ -155,9 +132,7 @@ export function Dashboard() {
                   <Gift size={16} className="text-success" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-text-primary">
-                    Rewards Available
-                  </p>
+                  <p className="text-xs font-bold text-text-primary">Rewards Available</p>
                   <p className="text-[10px] text-text-tertiary">
                     {rewards.hive > 0 && `${rewards.hive.toFixed(3)} HIVE `}
                     {rewards.hbd > 0 && `${rewards.hbd.toFixed(3)} HBD `}
@@ -165,25 +140,17 @@ export function Dashboard() {
                   </p>
                 </div>
               </div>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleClaimRewards}
-                loading={isClaiming}
-              >
+              <Button variant="primary" size="sm" onClick={handleClaimRewards} loading={isClaiming}>
                 Claim
               </Button>
             </div>
           )}
 
-          {/* Price chart */}
-          <PriceChart currentPrice={hivePriceUsd} symbol="HIVE" />
-
-          {/* Quick actions */}
-          <ActionButtons />
-
-          {/* Resources */}
+          {/* 4. Resources */}
           <ResourceBar />
+
+          {/* 5. Price chart — nice to have, can scroll to it */}
+          <PriceChart currentPrice={hivePriceUsd} symbol="HIVE" />
         </div>
       </div>
 
