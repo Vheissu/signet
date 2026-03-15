@@ -48,6 +48,7 @@ export function Settings() {
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioEnrolled, setBioEnrolled] = useState(false);
   const [bioLoading, setBioLoading] = useState(false);
+  const [showBioConfirm, setShowBioConfirm] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -61,28 +62,33 @@ export function Settings() {
   }, []);
 
   const handleToggleBiometric = async () => {
-    setBioLoading(true);
     if (bioEnrolled) {
+      setBioLoading(true);
       await removeBiometric();
       setBioEnrolled(false);
       addToast('Fingerprint unlock disabled', 'info');
-      // Clear the dismissal flag so the prompt can show again if re-enabled
       try {
         await chrome.storage.local.remove('biometric_dismissed');
       } catch {}
+      setBioLoading(false);
     } else {
       if (!password) {
         addToast('Wallet must be unlocked with password first', 'error');
-        setBioLoading(false);
         return;
       }
-      const success = await enrollBiometric(password);
-      if (success) {
-        setBioEnrolled(true);
-        addToast('Fingerprint unlock enabled', 'success');
-      } else {
-        addToast('Failed to enable fingerprint unlock', 'error');
-      }
+      setShowBioConfirm(true);
+    }
+  };
+
+  const handleConfirmBiometric = async () => {
+    setShowBioConfirm(false);
+    setBioLoading(true);
+    const success = await enrollBiometric(password!);
+    if (success) {
+      setBioEnrolled(true);
+      addToast('Fingerprint unlock enabled', 'success');
+    } else {
+      addToast('Failed to enable fingerprint unlock', 'error');
     }
     setBioLoading(false);
   };
@@ -325,6 +331,37 @@ export function Settings() {
               </div>
             );
           })}
+        </div>
+      </Modal>
+
+      {/* Biometric Confirmation Modal */}
+      <Modal
+        isOpen={showBioConfirm}
+        onClose={() => setShowBioConfirm(false)}
+        title="Enable Fingerprint Unlock?"
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-text-secondary">
+            This stores an encrypted copy of your password on this device so Touch ID can unlock your wallet without typing it.
+          </p>
+          <p className="text-sm text-text-secondary">
+            If someone gains access to your device's filesystem (e.g. malware or physical access), they could potentially recover your password without biometric verification.
+          </p>
+          <p className="text-sm text-text-secondary">
+            Without fingerprint unlock, your vault is protected by a password that must be brute-forced through 600,000 rounds of encryption, even if your device is compromised.
+          </p>
+          <div className="flex gap-3 pt-1">
+            <Button
+              variant="secondary"
+              onClick={() => setShowBioConfirm(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmBiometric} className="flex-1">
+              Enable Anyway
+            </Button>
+          </div>
         </div>
       </Modal>
 
