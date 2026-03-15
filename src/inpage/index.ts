@@ -170,6 +170,19 @@ const signet = {
   requestConvert(owner: string, amount: string): Promise<SignetResponse> {
     return sendRequest('CONVERT', { owner, amount });
   },
+
+  /**
+   * VSC/Magi smart contract signed call.
+   * Broadcasts a custom_json with the specified method and params.
+   */
+  requestSignedCall(
+    username: string,
+    method: string,
+    params: string,
+    typeWif: 'posting' | 'active' | 'memo' = 'posting'
+  ): Promise<SignetResponse> {
+    return sendRequest('SIGNED_CALL', { username, method, params, typeWif });
+  },
 };
 
 // Expose on window
@@ -222,6 +235,14 @@ const signet = {
     approve: boolean,
     callback: ResponseCallback
   ) => signet.requestWitnessVote(account, witness, approve).then(callback),
+  requestSignedCall: (
+    username: string,
+    method: string,
+    params: string,
+    typeWif: string,
+    callback: ResponseCallback
+  ) =>
+    signet.requestSignedCall(username, method, params, typeWif.toLowerCase() as any).then(callback),
 };
 
 console.log('[Signet] Inpage API initialized');

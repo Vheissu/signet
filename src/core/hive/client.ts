@@ -365,6 +365,34 @@ export async function broadcastCustomJson(
   );
 }
 
+/**
+ * Broadcast a VSC/Magi signed call as a custom_json operation.
+ * The method becomes the custom_json id, and params becomes the json body.
+ */
+export async function broadcastSignedCall(
+  account: string,
+  method: string,
+  params: string,
+  keyRole: 'posting' | 'active',
+  key: string
+) {
+  const privateKey = PrivateKey.fromString(key);
+  return getClient().broadcast.sendOperations(
+    [
+      [
+        'custom_json',
+        {
+          required_auths: keyRole === 'active' ? [account] : [],
+          required_posting_auths: keyRole === 'posting' ? [account] : [],
+          id: method,
+          json: params,
+        },
+      ],
+    ],
+    privateKey
+  );
+}
+
 export async function broadcastTransferToSavings(
   from: string,
   to: string,

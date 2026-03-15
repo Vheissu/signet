@@ -97,7 +97,8 @@ export type MessageType =
   | 'CONVERT'
   | 'RECURRENT_TRANSFER'
   | 'SAVINGS_DEPOSIT'
-  | 'SAVINGS_WITHDRAW';
+  | 'SAVINGS_WITHDRAW'
+  | 'SIGNED_CALL';
 
 export interface ExtensionMessage {
   type: MessageType;

@@ -42,6 +42,7 @@ export async function handleMessage(
     case 'DECODE_MEMO':
     case 'ENCODE_MEMO':
     case 'CONVERT':
+    case 'SIGNED_CALL':
       return handleDAppRequest(message);
 
     default:
