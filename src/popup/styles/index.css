@@ -1,0 +1,219 @@
+@import "tailwindcss";
+
+@theme {
+  /* === DEEP PURPLE PALETTE (inspired by fintech/portfolio apps) === */
+  --color-bg: #1A1128;
+  --color-surface: #231838;
+  --color-surface-elevated: #2D2145;
+  --color-surface-overlay: #3A2D55;
+  --color-surface-card: #2A1E42;
+
+  /* Hive red — used sparingly as primary accent */
+  --color-hive: #E31337;
+  --color-hive-light: #FF2D50;
+  --color-hive-dark: #B80F2C;
+
+  /* Warm coral — secondary accent for cards, badges */
+  --color-coral: #F4845F;
+  --color-coral-light: #F7A084;
+
+  /* Mint — positive values, success */
+  --color-success: #5CEAA0;
+  --color-warning: #FFD166;
+  --color-error: #EF476F;
+  --color-info: #63B3ED;
+
+  /* Text */
+  --color-text-primary: #F0ECF5;
+  --color-text-secondary: #A99BBF;
+  --color-text-tertiary: #7A6B8F;
+
+  /* Borders */
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-accent: rgba(227, 19, 55, 0.2);
+
+  /* Font */
+  --font-sans: 'Source Sans 3', 'Source Sans Pro', system-ui, -apple-system, sans-serif;
+
+  /* Radii */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+}
+
+/* ===== EXTENSION POPUP CONTAINER ===== */
+html {
+  width: 400px !important;
+  min-width: 400px !important;
+  max-width: 400px !important;
+  height: 600px !important;
+  min-height: 600px !important;
+  max-height: 600px !important;
+  overflow: hidden !important;
+  background-color: #1A1128 !important;
+}
+
+body {
+  width: 400px !important;
+  min-width: 400px !important;
+  max-width: 400px !important;
+  height: 600px !important;
+  min-height: 600px !important;
+  max-height: 600px !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background-color: #1A1128 !important;
+  color: #F0ECF5 !important;
+  font-family: 'Source Sans 3', 'Source Sans Pro', system-ui, -apple-system, sans-serif !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  width: 400px !important;
+  height: 600px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  position: relative;
+  background-color: #1A1128;
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(227, 19, 55, 0.25); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(227, 19, 55, 0.4); }
+
+/* ===== NATIVE ELEMENTS ===== */
+select {
+  background-color: transparent;
+  color: inherit;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+select option {
+  background-color: #2D2145;
+  color: #F0ECF5;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] { -moz-appearance: textfield; }
+
+/* ===== GRADIENTS ===== */
+.gradient-hero {
+  background: linear-gradient(135deg, #E31337 0%, #FF2D50 50%, #B80F2C 100%);
+}
+.gradient-card {
+  background: linear-gradient(135deg, rgba(227, 19, 55, 0.08) 0%, rgba(244, 132, 95, 0.04) 100%);
+}
+.gradient-purple {
+  background: linear-gradient(135deg, #2D2145 0%, #3A2D55 100%);
+}
+.gradient-coral {
+  background: linear-gradient(135deg, #F4845F 0%, #F7A084 100%);
+}
+.gradient-subtle {
+  background: radial-gradient(ellipse at top center, rgba(244, 132, 95, 0.06) 0%, transparent 60%);
+  background-color: #1A1128;
+}
+
+/* ===== GLOW EFFECTS ===== */
+.glow-hive {
+  box-shadow: 0 0 24px rgba(227, 19, 55, 0.2), 0 0 48px rgba(227, 19, 55, 0.06);
+}
+.glow-success {
+  box-shadow: 0 0 20px rgba(92, 234, 160, 0.15);
+}
+
+/* ===== BUTTON SHINE ===== */
+.btn-shine {
+  position: relative;
+  overflow: hidden;
+}
+.btn-shine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  transition: left 500ms ease;
+}
+.btn-shine:hover::after { left: 100%; }
+
+/* ===== ANIMATIONS ===== */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 15px rgba(227, 19, 55, 0.15); }
+  50% { box-shadow: 0 0 30px rgba(227, 19, 55, 0.3); }
+}
+.animate-pulse-glow { animation: pulse-glow 2.5s ease-in-out infinite; }
+
+@keyframes shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, #231838 0%, #2D2145 50%, #231838 100%);
+  background-size: 200px 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fade-in 250ms ease-out; }
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up { animation: slide-up 300ms ease-out; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.animate-spin { animation: spin 1s linear infinite; }
+
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-count { animation: count-up 350ms ease-out; }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-10px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes toast-out {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translateY(-10px) scale(0.96); }
+}
+.toast-enter { animation: toast-in 200ms ease-out; }
+.toast-exit { animation: toast-out 150ms ease-in forwards; }
+
+/* ===== CHART ===== */
+.chart-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.chart-area {
+  opacity: 0.15;
+}
+.chart-dot {
+  fill: #E31337;
+  stroke: #1A1128;
+  stroke-width: 3;
+}
