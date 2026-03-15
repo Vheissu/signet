@@ -11,12 +11,14 @@ import type { TransactionRecord } from '@/core/types';
 const FILTERS: { key: string; label: string; types: string[] }[] = [
   { key: 'all', label: 'All', types: [] },
   { key: 'transfers', label: 'Transfers', types: ['transfer'] },
+  { key: 'tokens', label: 'Tokens', types: [
+    'he_transfer', 'he_stake', 'he_unstake', 'he_delegate', 'he_undelegate',
+    'he_market_buy', 'he_market_sell', 'he_other',
+  ]},
   { key: 'power', label: 'Power', types: ['transfer_to_vesting', 'withdraw_vesting'] },
   { key: 'delegation', label: 'Delegation', types: ['delegate_vesting_shares'] },
   { key: 'rewards', label: 'Rewards', types: ['claim_reward_balance', 'curation_reward', 'author_reward', 'producer_reward'] },
-  { key: 'votes', label: 'Votes', types: ['vote', 'account_witness_vote'] },
   { key: 'savings', label: 'Savings', types: ['transfer_to_savings', 'transfer_from_savings'] },
-  { key: 'social', label: 'Social', types: ['comment', 'custom_json'] },
 ];
 
 export function History() {
@@ -74,21 +76,36 @@ export function History() {
           </button>
         </div>
 
-        {/* Filter pills */}
-        <div className="flex gap-1.5 px-4 py-2 overflow-x-auto">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold whitespace-nowrap transition-colors ${
-                filter === f.key
-                  ? 'bg-hive text-white'
-                  : 'bg-surface-elevated text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
+        {/* Filter pills — scrollable */}
+        <div className="flex gap-1.5 px-4 py-2 overflow-x-auto no-scrollbar">
+          {FILTERS.map((f) => {
+            const count = f.types.length === 0
+              ? transactions.length
+              : transactions.filter((tx) => f.types.includes(tx.type)).length;
+
+            if (f.key !== 'all' && count === 0) return null;
+
+            return (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold whitespace-nowrap transition-colors flex-shrink-0 ${
+                  filter === f.key
+                    ? 'bg-hive text-white'
+                    : 'bg-surface-elevated text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                {f.label}
+                {count > 0 && (
+                  <span className={`text-[9px] px-1 py-0.5 rounded-md ${
+                    filter === f.key ? 'bg-white/20' : 'bg-surface-overlay'
+                  }`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* Transaction list */}

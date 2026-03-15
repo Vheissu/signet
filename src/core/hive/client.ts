@@ -41,6 +41,66 @@ export async function getDynamicGlobalProperties(): Promise<DynamicGlobalPropert
   return getClient().database.getDynamicGlobalProperties();
 }
 
+// Only show financial/monetary operations — skip social and internal ops
+const ALLOWED_OPS = new Set([
+  'transfer',
+  'transfer_to_vesting',
+  'withdraw_vesting',
+  'delegate_vesting_shares',
+  'claim_reward_balance',
+  'transfer_to_savings',
+  'transfer_from_savings',
+  'fill_convert_request',
+  'fill_order',
+  'curation_reward',
+  'author_reward',
+  'producer_reward',
+  'custom_json', // parsed into HE ops below
+]);
+
+// Map Hive Engine contract actions to human-readable types
+function parseHiveEngineOp(data: any): {
+  type: string;
+  from: string;
+  to: string;
+  amount: string;
+  memo: string;
+} | null {
+  const from = data.required_posting_auths?.[0] || data.required_auths?.[0] || '';
+
+  if (data.id !== 'ssc-mainnet-hive') return null;
+
+  try {
+    const parsed = JSON.parse(data.json);
+    const action = parsed.contractAction;
+    const payload = parsed.contractPayload || {};
+    const symbol = payload.symbol || '';
+    const quantity = payload.quantity || '';
+    const to = payload.to || '';
+
+    switch (action) {
+      case 'transfer':
+        return { type: 'he_transfer', from, to, amount: `${quantity} ${symbol}`, memo: payload.memo || '' };
+      case 'stake':
+        return { type: 'he_stake', from, to: to || from, amount: `${quantity} ${symbol}`, memo: '' };
+      case 'unstake':
+        return { type: 'he_unstake', from, to: '', amount: `${quantity} ${symbol}`, memo: '' };
+      case 'delegate':
+        return { type: 'he_delegate', from, to, amount: `${quantity} ${symbol}`, memo: '' };
+      case 'undelegate':
+        return { type: 'he_undelegate', from, to: payload.from || '', amount: `${quantity} ${symbol}`, memo: '' };
+      case 'buy':
+        return { type: 'he_market_buy', from, to: '', amount: `${quantity} ${symbol}`, memo: '' };
+      case 'sell':
+        return { type: 'he_market_sell', from, to: '', amount: `${quantity} ${symbol}`, memo: '' };
+      default:
+        return { type: 'he_other', from, to, amount: `${action} ${symbol}`.trim(), memo: '' };
+    }
+  } catch {
+    return null;
+  }
+}
+
 export async function getAccountHistory(
   username: string,
   start: number = -1,
@@ -52,11 +112,14 @@ export async function getAccountHistory(
     .map(([, op]: any) => {
       const [type, data] = op.op;
 
-      // Extract the most useful fields depending on operation type
+      // Only show financial operations
+      if (!ALLOWED_OPS.has(type)) return null;
+
       let from = '';
       let to = '';
       let amount = '';
       let memo = '';
+      let resolvedType = type;
 
       switch (type) {
         case 'transfer':
@@ -90,31 +153,19 @@ export async function getAccountHistory(
           from = data.owner;
           amount = data.amount_out;
           break;
-        case 'account_witness_vote':
-          from = data.account; to = data.witness;
-          amount = data.approve ? 'approve' : 'unapprove';
+        case 'custom_json': {
+          // Parse Hive Engine operations into proper types
+          const heOp = parseHiveEngineOp(data);
+          if (heOp) {
+            resolvedType = heOp.type;
+            from = heOp.from; to = heOp.to;
+            amount = heOp.amount; memo = heOp.memo;
+          } else {
+            // Non-HE custom_json — skip unless it's a known dApp
+            return null;
+          }
           break;
-        case 'vote':
-          from = data.voter; to = data.author;
-          amount = `${(data.weight / 100).toFixed(0)}%`;
-          memo = data.permlink;
-          break;
-        case 'custom_json':
-          from = (data.required_posting_auths?.[0] || data.required_auths?.[0] || '');
-          memo = data.id;
-          try {
-            const parsed = JSON.parse(data.json);
-            if (parsed.contractAction) {
-              amount = `${parsed.contractAction} ${parsed.contractPayload?.symbol || ''}`.trim();
-              to = parsed.contractPayload?.to || '';
-            }
-          } catch {}
-          break;
-        case 'comment':
-          from = data.author;
-          memo = data.permlink;
-          to = data.parent_author || '';
-          break;
+        }
         case 'curation_reward':
           from = data.curator;
           amount = data.reward;
@@ -136,17 +187,13 @@ export async function getAccountHistory(
           amount = data.current_pays;
           break;
         default:
-          // Catch-all for other types
-          from = data.from || data.account || data.voter || data.delegator || '';
-          to = data.to || data.delegatee || data.author || '';
-          amount = data.amount || data.vesting_shares || '';
-          memo = data.memo || '';
-          break;
+          // Skip anything we don't explicitly handle
+          return null;
       }
 
       return {
         id: op.trx_id,
-        type,
+        type: resolvedType,
         timestamp: op.timestamp,
         from,
         to,
@@ -155,7 +202,8 @@ export async function getAccountHistory(
         block: op.block,
       };
     })
-    .reverse();
+    .filter(Boolean)
+    .reverse() as TransactionRecord[];
 }
 
 export async function getVestingDelegations(username: string): Promise<DelegationInfo[]> {
