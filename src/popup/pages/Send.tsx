@@ -105,11 +105,24 @@ export function Send() {
           label="Recipient"
           value={recipient}
           onChange={(e) => {
-            setRecipient(e.target.value);
+            const val = e.target.value;
+            // Detect pasted hive:// URIs and auto-fill all fields
+            if (val.startsWith('hive://')) {
+              const parsed = parseTransferUri(val);
+              if (parsed) {
+                setRecipient(parsed.to);
+                if (parsed.amount) setAmount(parsed.amount);
+                if (parsed.currency) setCurrency(parsed.currency as 'HIVE' | 'HBD');
+                if (parsed.memo) setMemo(parsed.memo);
+                setRecipientError('');
+                return;
+              }
+            }
+            setRecipient(val);
             setRecipientError('');
           }}
           onBlur={validateRecipient}
-          placeholder="Enter username"
+          placeholder="Username or hive:// link"
           error={recipientError}
           icon={<span className="text-text-tertiary font-bold text-sm">@</span>}
           rightElement={
@@ -117,7 +130,7 @@ export function Send() {
               type="button"
               onClick={() => qrFileRef.current?.click()}
               className="p-1 rounded-lg text-text-tertiary hover:text-hive hover:bg-hive/10 transition-colors"
-              title="Scan QR code"
+              title="Scan QR code image"
             >
               <ScanLine size={16} />
             </button>

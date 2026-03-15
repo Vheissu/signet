@@ -1,44 +1,72 @@
 import { useState, useEffect } from 'react';
-import { Copy, Check, QrCode } from 'lucide-react';
+import { Copy, Check, QrCode, Link } from 'lucide-react';
 import { PageContainer } from '@/popup/components/layout/PageContainer';
 import { Card } from '@/popup/components/ui/Card';
 import { Avatar } from '@/popup/components/ui/Avatar';
+import { Input } from '@/popup/components/ui/Input';
+import { Button } from '@/popup/components/ui/Button';
 import { useStore } from '@/popup/store';
-import { generateReceiveQR } from '@/core/qr';
+import { generateTransferQR, buildTransferUri } from '@/core/qr';
 
 export function Receive() {
   const activeAccountName = useStore((s) => s.activeAccountName);
-  const [copied, setCopied] = useState(false);
+  const [copiedUsername, setCopiedUsername] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (activeAccountName) {
-      generateReceiveQR(activeAccountName, { width: 240 }).then(setQrDataUrl);
-    }
-  }, [activeAccountName]);
+  // Optional: let the user pre-fill an amount for a payment request
+  const [requestAmount, setRequestAmount] = useState('');
+  const [requestCurrency, setRequestCurrency] = useState<'HIVE' | 'HBD'>('HIVE');
 
-  const handleCopy = async () => {
+  useEffect(() => {
+    regenerateQR();
+  }, [activeAccountName, requestAmount, requestCurrency]);
+
+  async function regenerateQR() {
+    if (!activeAccountName) return;
+    const data: any = { to: activeAccountName };
+    if (requestAmount && parseFloat(requestAmount) > 0) {
+      data.amount = parseFloat(requestAmount).toFixed(3);
+      data.currency = requestCurrency;
+    }
+    const url = await generateTransferQR(data, { width: 240 });
+    setQrDataUrl(url);
+  }
+
+  function getTransferLink(): string {
+    const data: any = { to: activeAccountName || '' };
+    if (requestAmount && parseFloat(requestAmount) > 0) {
+      data.amount = parseFloat(requestAmount).toFixed(3);
+      data.currency = requestCurrency;
+    }
+    return buildTransferUri(data);
+  }
+
+  const handleCopyUsername = async () => {
     if (!activeAccountName) return;
     await navigator.clipboard.writeText(activeAccountName);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedUsername(true);
+    setTimeout(() => setCopiedUsername(false), 2000);
+  };
+
+  const handleCopyLink = async () => {
+    const link = getTransferLink();
+    await navigator.clipboard.writeText(link);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   return (
     <PageContainer title="Receive" showBack>
-      <div className="flex flex-col items-center pt-4 space-y-5">
-        {/* Avatar */}
-        {activeAccountName && (
-          <Avatar username={activeAccountName} size="lg" />
-        )}
-
-        {/* Username */}
+      <div className="flex flex-col items-center pt-2 space-y-4">
+        {/* Avatar & username */}
+        {activeAccountName && <Avatar username={activeAccountName} size="lg" />}
         <div className="text-center">
           <h3 className="text-xl font-extrabold text-text-primary">
             @{activeAccountName}
           </h3>
           <p className="text-xs text-text-secondary mt-1">
-            Share your username or QR code to receive HIVE or HBD
+            Share your QR code or payment link
           </p>
         </div>
 
@@ -54,7 +82,9 @@ export function Receive() {
               <div className="flex items-center gap-1.5 text-text-tertiary">
                 <QrCode size={12} />
                 <p className="text-[10px]">
-                  Scan to send HIVE to @{activeAccountName}
+                  {requestAmount
+                    ? `Request ${requestAmount} ${requestCurrency}`
+                    : `Send HIVE to @${activeAccountName}`}
                 </p>
               </div>
             </div>
@@ -63,36 +93,58 @@ export function Receive() {
           )}
         </Card>
 
-        {/* Copy card */}
-        <Card variant="gradient" padding="md" className="w-full">
-          <button
-            onClick={handleCopy}
-            className="w-full flex items-center justify-between gap-3 group"
-          >
-            <div className="flex-1 text-left">
-              <p className="text-[11px] text-text-secondary font-medium uppercase tracking-wider mb-0.5">
-                Hive Username
-              </p>
-              <p className="text-base font-bold text-text-primary">
-                @{activeAccountName}
-              </p>
+        {/* Request specific amount (optional) */}
+        <Card variant="outline" padding="sm" className="w-full">
+          <p className="text-[11px] font-semibold text-text-secondary tracking-widest uppercase mb-2 px-1">
+            Request Amount (optional)
+          </p>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <Input
+                type="number"
+                value={requestAmount}
+                onChange={(e) => setRequestAmount(e.target.value)}
+                placeholder="0.000"
+                step="0.001"
+                rightElement={
+                  <select
+                    value={requestCurrency}
+                    onChange={(e) => setRequestCurrency(e.target.value as 'HIVE' | 'HBD')}
+                    className="text-[11px] font-bold text-hive cursor-pointer bg-transparent"
+                  >
+                    <option value="HIVE">HIVE</option>
+                    <option value="HBD">HBD</option>
+                  </select>
+                }
+              />
             </div>
-            <div
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                copied
-                  ? 'bg-success/12 text-success'
-                  : 'bg-surface-overlay text-text-secondary group-hover:bg-hive/12 group-hover:text-hive'
-              }`}
-            >
-              {copied ? <Check size={16} /> : <Copy size={16} />}
-            </div>
-          </button>
+          </div>
         </Card>
 
-        <p className="text-[11px] text-text-tertiary text-center px-4 leading-relaxed">
-          On Hive, transfers go to usernames, not complex addresses.
-          Share <strong className="text-text-secondary">@{activeAccountName}</strong> with
-          the sender or let them scan the QR code above.
+        {/* Copy buttons */}
+        <div className="w-full flex gap-2.5">
+          <Button
+            variant="secondary"
+            size="md"
+            fullWidth
+            onClick={handleCopyUsername}
+            icon={copiedUsername ? <Check size={14} /> : <Copy size={14} />}
+          >
+            {copiedUsername ? 'Copied' : 'Username'}
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
+            fullWidth
+            onClick={handleCopyLink}
+            icon={copiedLink ? <Check size={14} /> : <Link size={14} />}
+          >
+            {copiedLink ? 'Copied' : 'Payment Link'}
+          </Button>
+        </div>
+
+        <p className="text-[10px] text-text-tertiary text-center px-4 leading-relaxed pb-2">
+          The payment link can be pasted directly into Signet's Send field to auto-fill the transfer details.
         </p>
       </div>
     </PageContainer>
