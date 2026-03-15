@@ -11,6 +11,7 @@ import { useAccounts } from '@/popup/hooks/useAccounts';
 import {
   getWitnessesByVote,
   listProposals,
+  listProposalVotes,
   broadcastWitnessVote,
   broadcastProposalVote,
 } from '@/core/hive/client';
@@ -70,16 +71,21 @@ export function Governance() {
           }))
         );
       } else {
-        const result = await listProposals();
+        const [result, votedIds] = await Promise.all([
+          listProposals(),
+          activeAccountName
+            ? listProposalVotes(activeAccountName)
+            : Promise.resolve(new Set<number>()),
+        ]);
         setProposals(
           (result || []).map((p: any) => ({
-            id: p.id,
+            id: p.id ?? p.proposal_id,
             creator: p.creator,
             subject: p.subject,
             daily_pay: p.daily_pay,
             total_votes: p.total_votes,
             status: p.status,
-            voted: false,
+            voted: votedIds.has(p.id ?? p.proposal_id),
           }))
         );
       }
@@ -224,24 +230,14 @@ export function Governance() {
                       </div>
                       <div className="flex gap-2">
                         <Button
-                          variant="secondary"
+                          variant={p.voted ? 'danger' : 'secondary'}
                           size="sm"
-                          onClick={() => handleProposalVote(p.id, true)}
+                          onClick={() => handleProposalVote(p.id, !p.voted)}
                           loading={votingProposal === p.id}
-                          icon={<ThumbsUp size={12} />}
+                          icon={p.voted ? <ThumbsDown size={12} /> : <ThumbsUp size={12} />}
                           className="flex-1"
                         >
-                          Vote
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleProposalVote(p.id, false)}
-                          loading={votingProposal === p.id}
-                          icon={<ThumbsDown size={12} />}
-                          className="flex-1"
-                        >
-                          Unvote
+                          {p.voted ? 'Unvote' : 'Vote'}
                         </Button>
                       </div>
                     </div>

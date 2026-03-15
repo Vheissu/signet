@@ -220,12 +220,29 @@ export async function getActiveWitnesses() {
 
 export async function listProposals() {
   return getClient().call('condenser_api', 'list_proposals', [
-    [-1],
+    [],
     100,
     'by_total_votes',
+    'descending',
+    'active',
+  ]);
+}
+
+export async function listProposalVotes(voter: string): Promise<Set<number>> {
+  const result: any[] = await getClient().call('condenser_api', 'list_proposal_votes', [
+    [voter],
+    1000,
+    'by_voter_proposal',
     'ascending',
     'active',
   ]);
+  const ids = new Set<number>();
+  for (const v of result) {
+    if (v.voter === voter) {
+      ids.add(v.proposal?.id ?? v.proposal?.proposal_id);
+    }
+  }
+  return ids;
 }
 
 export async function getResourceCredits(username: string) {
