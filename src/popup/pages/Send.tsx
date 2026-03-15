@@ -106,8 +106,8 @@ export function Send() {
           value={recipient}
           onChange={(e) => {
             const val = e.target.value;
-            // Detect pasted hive:// URIs and auto-fill all fields
-            if (val.startsWith('hive://')) {
+            // Detect pasted hive:// or Hivesigner URIs and auto-fill all fields
+            if (val.startsWith('hive://') || val.includes('hivesigner.com')) {
               const parsed = parseTransferUri(val);
               if (parsed) {
                 setRecipient(parsed.to);
@@ -122,7 +122,7 @@ export function Send() {
             setRecipientError('');
           }}
           onBlur={validateRecipient}
-          placeholder="Username or hive:// link"
+          placeholder="Username or payment link"
           error={recipientError}
           icon={<span className="text-text-tertiary font-bold text-sm">@</span>}
           rightElement={
