@@ -93,46 +93,89 @@ export function TokenDetail() {
     }
   }
 
-  // Draw chart
+  // Draw chart with labels and axes
   useEffect(() => {
     if (!chartRef.current || priceHistory.length === 0) return;
     const svg = d3.select(chartRef.current);
     svg.selectAll('*').remove();
 
     const width = 352;
-    const height = 120;
-    const margin = { top: 8, right: 4, bottom: 4, left: 4 };
+    const height = 160;
+    const margin = { top: 12, right: 50, bottom: 24, left: 6 };
     const innerW = width - margin.left - margin.right;
     const innerH = height - margin.top - margin.bottom;
 
     const xScale = d3.scaleLinear()
       .domain(d3.extent(priceHistory, (d) => d.time) as [number, number])
       .range([0, innerW]);
+    const yExtent = [
+      (d3.min(priceHistory, (d) => d.price) || 0) * 0.995,
+      (d3.max(priceHistory, (d) => d.price) || 1) * 1.005,
+    ];
     const yScale = d3.scaleLinear()
-      .domain([
-        (d3.min(priceHistory, (d) => d.price) || 0) * 0.99,
-        (d3.max(priceHistory, (d) => d.price) || 1) * 1.01,
-      ])
+      .domain(yExtent)
       .range([innerH, 0]);
 
     const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
     const isUp = priceHistory[priceHistory.length - 1].price >= priceHistory[0].price;
     const color = isUp ? '#5CEAA0' : '#EF476F';
 
+    // Horizontal grid lines + Y-axis price labels
+    const yTicks = yScale.ticks(4);
+    yTicks.forEach((tick) => {
+      g.append('line')
+        .attr('x1', 0).attr('x2', innerW)
+        .attr('y1', yScale(tick)).attr('y2', yScale(tick))
+        .attr('stroke', 'rgba(255,255,255,0.04)')
+        .attr('stroke-dasharray', '3,3');
+      g.append('text')
+        .attr('x', innerW + 6)
+        .attr('y', yScale(tick) + 3)
+        .attr('fill', '#7A6B8F')
+        .attr('font-size', '9')
+        .attr('font-family', 'Source Sans 3, system-ui')
+        .text(tick < 0.01 ? tick.toFixed(6) : tick < 1 ? tick.toFixed(4) : tick.toFixed(2));
+    });
+
+    // X-axis time labels
+    const timeExtent = d3.extent(priceHistory, (d) => d.time) as [number, number];
+    const timeTicks = [
+      timeExtent[0],
+      timeExtent[0] + (timeExtent[1] - timeExtent[0]) * 0.33,
+      timeExtent[0] + (timeExtent[1] - timeExtent[0]) * 0.66,
+      timeExtent[1],
+    ];
+    timeTicks.forEach((tick) => {
+      const d = new Date(tick);
+      const label = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+      g.append('text')
+        .attr('x', xScale(tick))
+        .attr('y', innerH + 16)
+        .attr('fill', '#7A6B8F')
+        .attr('font-size', '9')
+        .attr('font-family', 'Source Sans 3, system-ui')
+        .attr('text-anchor', 'middle')
+        .text(label);
+    });
+
+    // Gradient fill
     const gradient = svg.append('defs').append('linearGradient')
       .attr('id', 'he-grad').attr('x1', '0%').attr('y1', '0%').attr('x2', '0%').attr('y2', '100%');
     gradient.append('stop').attr('offset', '0%').attr('stop-color', color).attr('stop-opacity', 0.2);
     gradient.append('stop').attr('offset', '100%').attr('stop-color', color).attr('stop-opacity', 0);
 
+    // Area
     const area = d3.area<{ time: number; price: number }>()
       .x((d) => xScale(d.time)).y0(innerH).y1((d) => yScale(d.price)).curve(d3.curveMonotoneX);
     g.append('path').datum(priceHistory).attr('d', area).attr('fill', 'url(#he-grad)');
 
+    // Line
     const line = d3.line<{ time: number; price: number }>()
       .x((d) => xScale(d.time)).y((d) => yScale(d.price)).curve(d3.curveMonotoneX);
     g.append('path').datum(priceHistory).attr('d', line)
       .attr('fill', 'none').attr('stroke', color).attr('stroke-width', 2).attr('stroke-linecap', 'round');
 
+    // End dot
     const last = priceHistory[priceHistory.length - 1];
     g.append('circle').attr('cx', xScale(last.time)).attr('cy', yScale(last.price))
       .attr('r', 3.5).attr('fill', color).attr('stroke', '#1A1128').attr('stroke-width', 2);
@@ -225,7 +268,10 @@ export function TokenDetail() {
         {/* Price chart */}
         {priceHistory.length > 0 && (
           <Card variant="elevated" padding="sm">
-            <svg ref={chartRef} viewBox="0 0 352 120" className="w-full" preserveAspectRatio="xMidYMid meet" />
+            <p className="text-[10px] font-semibold text-text-tertiary tracking-widest uppercase px-1 mb-1">
+              Price (HIVE) — 24h
+            </p>
+            <svg ref={chartRef} viewBox="0 0 352 160" className="w-full" preserveAspectRatio="xMidYMid meet" />
           </Card>
         )}
 

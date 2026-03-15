@@ -44,35 +44,114 @@ export async function getDynamicGlobalProperties(): Promise<DynamicGlobalPropert
 export async function getAccountHistory(
   username: string,
   start: number = -1,
-  limit: number = 50
+  limit: number = 100
 ): Promise<TransactionRecord[]> {
   const history = await getClient().database.getAccountHistory(username, start, limit);
 
   return history
-    .filter(([, op]: any) => {
-      const type = op.op[0];
-      return [
-        'transfer',
-        'transfer_to_vesting',
-        'withdraw_vesting',
-        'delegate_vesting_shares',
-        'claim_reward_balance',
-        'transfer_to_savings',
-        'transfer_from_savings',
-        'fill_convert_request',
-        'fill_order',
-      ].includes(type);
-    })
     .map(([, op]: any) => {
       const [type, data] = op.op;
+
+      // Extract the most useful fields depending on operation type
+      let from = '';
+      let to = '';
+      let amount = '';
+      let memo = '';
+
+      switch (type) {
+        case 'transfer':
+          from = data.from; to = data.to;
+          amount = data.amount; memo = data.memo;
+          break;
+        case 'transfer_to_vesting':
+          from = data.from; to = data.to;
+          amount = data.amount;
+          break;
+        case 'withdraw_vesting':
+          from = data.account;
+          amount = data.vesting_shares;
+          break;
+        case 'delegate_vesting_shares':
+          from = data.delegator; to = data.delegatee;
+          amount = data.vesting_shares;
+          break;
+        case 'claim_reward_balance':
+          from = data.account;
+          amount = [data.reward_hive, data.reward_hbd, data.reward_vesting_balance]
+            .filter((a: string) => a && !a.startsWith('0.000'))
+            .join(' + ');
+          break;
+        case 'transfer_to_savings':
+        case 'transfer_from_savings':
+          from = data.from; to = data.to;
+          amount = data.amount; memo = data.memo || '';
+          break;
+        case 'fill_convert_request':
+          from = data.owner;
+          amount = data.amount_out;
+          break;
+        case 'account_witness_vote':
+          from = data.account; to = data.witness;
+          amount = data.approve ? 'approve' : 'unapprove';
+          break;
+        case 'vote':
+          from = data.voter; to = data.author;
+          amount = `${(data.weight / 100).toFixed(0)}%`;
+          memo = data.permlink;
+          break;
+        case 'custom_json':
+          from = (data.required_posting_auths?.[0] || data.required_auths?.[0] || '');
+          memo = data.id;
+          try {
+            const parsed = JSON.parse(data.json);
+            if (parsed.contractAction) {
+              amount = `${parsed.contractAction} ${parsed.contractPayload?.symbol || ''}`.trim();
+              to = parsed.contractPayload?.to || '';
+            }
+          } catch {}
+          break;
+        case 'comment':
+          from = data.author;
+          memo = data.permlink;
+          to = data.parent_author || '';
+          break;
+        case 'curation_reward':
+          from = data.curator;
+          amount = data.reward;
+          memo = data.comment_permlink;
+          break;
+        case 'author_reward':
+          from = data.author;
+          amount = [data.hive_payout, data.hbd_payout, data.vesting_payout]
+            .filter((a: string) => a && !a.startsWith('0.000'))
+            .join(' + ');
+          memo = data.permlink;
+          break;
+        case 'producer_reward':
+          from = data.producer;
+          amount = data.vesting_shares;
+          break;
+        case 'fill_order':
+          from = data.current_owner;
+          amount = data.current_pays;
+          break;
+        default:
+          // Catch-all for other types
+          from = data.from || data.account || data.voter || data.delegator || '';
+          to = data.to || data.delegatee || data.author || '';
+          amount = data.amount || data.vesting_shares || '';
+          memo = data.memo || '';
+          break;
+      }
+
       return {
         id: op.trx_id,
         type,
         timestamp: op.timestamp,
-        from: data.from || data.delegator || '',
-        to: data.to || data.delegatee || '',
-        amount: data.amount || data.vesting_shares || data.reward_hive || '',
-        memo: data.memo || '',
+        from,
+        to,
+        amount,
+        memo,
         block: op.block,
       };
     })
