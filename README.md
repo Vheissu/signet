@@ -605,16 +605,18 @@ Scanning this QR code on a phone opens the Hivesigner web interface in the mobil
 
 Signet supports unlocking with Touch ID (macOS), Windows Hello, or any other platform authenticator via the **WebAuthn** (Web Authentication) API.
 
+Biometric unlock requires browser support for the WebAuthn **PRF** extension. If PRF is unavailable, Signet falls back to password-only unlock.
+
 ### How It Works
 
-1. **Enrollment**: After unlocking the wallet with your master password, enable biometric unlock in Settings. Signet creates a WebAuthn credential (triggering the Touch ID / Windows Hello prompt), generates a random 256-bit AES key, encrypts your wallet password with that key, and stores the encrypted password and credential reference in `chrome.storage.local`.
+1. **Enrollment**: After unlocking the wallet with your master password, enable biometric unlock in Settings. Signet creates a WebAuthn credential (triggering the Touch ID / Windows Hello prompt), derives an AES key from the authenticator via the WebAuthn PRF extension, encrypts your wallet password with that key, and stores only the encrypted password plus non-secret credential metadata in `chrome.storage.local`.
 
-2. **Unlock**: On the lock screen, choose "Unlock with fingerprint." Signet calls `navigator.credentials.get()`, which triggers the biometric prompt. On success, it decrypts the stored password and unlocks the wallet normally.
+2. **Unlock**: On the lock screen, choose "Unlock with fingerprint." Signet calls `navigator.credentials.get()`, which triggers the biometric prompt. On success, it derives the same AES key from the authenticator again, decrypts the stored password, and unlocks the wallet normally.
 
 ### Security Notes
 
 - The WebAuthn private key material never leaves the platform authenticator (Secure Enclave on macOS, TPM on Windows).
-- The wallet password is encrypted at rest with AES-256-GCM using a unique IV, even within the biometric storage.
+- The wallet password is encrypted at rest with AES-256-GCM using a unique IV, and the decrypting key is not stored alongside the ciphertext.
 - Biometric enrollment can be removed at any time from Settings, which deletes the stored credential and encrypted password.
 - Platform authenticator attachment is enforced (`authenticatorAttachment: 'platform'`), meaning only built-in biometrics are accepted -- no external USB keys.
 

@@ -4,7 +4,7 @@ import { Button } from '@/popup/components/ui/Button';
 import { Input } from '@/popup/components/ui/Input';
 import { useStore } from '@/popup/store';
 import {
-  isBiometricAvailable,
+  getBiometricSupport,
   isBiometricEnrolled,
   authenticateWithBiometric,
 } from '@/core/biometric/webauthn';
@@ -22,14 +22,23 @@ export function Login() {
   }, []);
 
   async function checkBiometric() {
-    const [available, enrolled] = await Promise.all([
-      isBiometricAvailable(),
+    const [support, enrolled] = await Promise.all([
+      getBiometricSupport(),
       isBiometricEnrolled(),
     ]);
-    setBiometricReady(available && enrolled);
+    const ready = support.available && enrolled;
+    setBiometricReady(ready);
+
+    if (!support.available && enrolled) {
+      setError(
+        support.reason === 'no-prf-support'
+          ? 'Fingerprint unlock is not supported in this browser. Please use your password.'
+          : 'Secure biometric unlock is unavailable here. Please use your password.'
+      );
+    }
 
     // Auto-trigger biometric on load if available
-    if (available && enrolled) {
+    if (ready) {
       handleBiometricUnlock();
     }
   }
@@ -59,8 +68,7 @@ export function Login() {
           setError('Biometric succeeded but password is invalid. Please enter manually.');
         }
       } else {
-        // User cancelled or it failed silently
-        setError('');
+        setError('Fingerprint unlock is unavailable or was cancelled. Please enter your password.');
       }
     } catch {
       setError('Biometric authentication failed');
