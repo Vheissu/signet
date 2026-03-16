@@ -21,7 +21,7 @@ import { useStore } from '@/popup/store';
 import { secureStorage } from '@/core/storage/secure-storage';
 import { useState, useEffect } from 'react';
 import {
-  isBiometricAvailable,
+  getBiometricSupport,
   isBiometricEnrolled,
   enrollBiometric,
   removeBiometric,
@@ -48,13 +48,21 @@ export function Settings() {
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioEnrolled, setBioEnrolled] = useState(false);
   const [bioLoading, setBioLoading] = useState(false);
+  const [bioUnavailableReason, setBioUnavailableReason] = useState('');
   const [showBioConfirm, setShowBioConfirm] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const available = await isBiometricAvailable();
-      setBioAvailable(available);
-      if (available) {
+      const support = await getBiometricSupport();
+      setBioAvailable(support.available);
+      setBioUnavailableReason(
+        support.reason === 'no-prf-support'
+          ? 'Requires WebAuthn PRF support in this browser'
+          : support.reason === 'unsupported-browser'
+            ? 'This browser does not support secure biometric unlock'
+            : ''
+      );
+      if (support.available) {
         const enrolled = await isBiometricEnrolled();
         setBioEnrolled(enrolled);
       }
@@ -174,23 +182,25 @@ export function Settings() {
               value="AES-256-GCM"
               badge={<Badge variant="success">Secure</Badge>}
             />
-            {bioAvailable && (
+            {(bioAvailable || bioUnavailableReason) && (
               <div className="px-4 py-3 flex items-center justify-between border-t border-border/50">
                 <div className="flex items-center gap-3">
                   <Fingerprint size={16} className="text-text-tertiary" />
                   <div>
                     <span className="text-sm text-text-primary">Fingerprint Unlock</span>
                     <p className="text-[10px] text-text-tertiary">
-                      {bioEnrolled ? 'Touch ID is enabled' : 'Use Touch ID to unlock'}
+                      {bioAvailable
+                        ? (bioEnrolled ? 'Touch ID is enabled' : 'Use Touch ID to unlock')
+                        : bioUnavailableReason}
                     </p>
                   </div>
                 </div>
                 <button
                   onClick={handleToggleBiometric}
-                  disabled={bioLoading}
+                  disabled={bioLoading || !bioAvailable}
                   className={`relative w-10 h-5.5 rounded-full transition-colors ${
                     bioEnrolled ? 'bg-success' : 'bg-surface-overlay'
-                  } ${bioLoading ? 'opacity-50' : ''}`}
+                  } ${bioLoading || !bioAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <div
                     className={`absolute top-0.5 w-4.5 h-4.5 rounded-full bg-white shadow transition-transform ${
@@ -342,13 +352,13 @@ export function Settings() {
       >
         <div className="space-y-3">
           <p className="text-sm text-text-secondary">
-            This stores an encrypted copy of your password on this device so Touch ID can unlock your wallet without typing it.
+            Signet will use WebAuthn PRF to derive a decryption key from your platform authenticator each time you unlock.
           </p>
           <p className="text-sm text-text-secondary">
-            If someone gains access to your device's filesystem (e.g. malware or physical access), they could potentially recover your password without biometric verification.
+            The encrypted password stays on this device, but the key used to decrypt it is not stored alongside the ciphertext.
           </p>
           <p className="text-sm text-text-secondary">
-            Without fingerprint unlock, your vault is protected by a password that must be brute-forced through 600,000 rounds of encryption, even if your device is compromised.
+            This still does not protect against active malware running inside your browser or extension context, so keep treating biometrics as convenience plus defense in depth, not as a replacement for device security.
           </p>
           <div className="flex gap-3 pt-1">
             <Button

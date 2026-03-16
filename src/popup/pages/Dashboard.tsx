@@ -12,7 +12,7 @@ import { broadcastClaimRewards } from '@/core/hive/client';
 import { useAccounts } from '@/popup/hooks/useAccounts';
 import { useState, useEffect } from 'react';
 import {
-  isBiometricAvailable,
+  getBiometricSupport,
   isBiometricEnrolled,
   enrollBiometric,
 } from '@/core/biometric/webauthn';
@@ -36,8 +36,8 @@ export function Dashboard() {
 
   async function checkBiometricPrompt() {
     try {
-      const available = await isBiometricAvailable();
-      if (!available) return;
+      const support = await getBiometricSupport();
+      if (!support.available) return;
       const enrolled = await isBiometricEnrolled();
       if (enrolled) return;
       if (typeof chrome !== 'undefined' && chrome?.storage) {
