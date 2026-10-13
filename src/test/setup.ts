@@ -1,7 +1,11 @@
 import '@testing-library/jest-dom';
 import { Buffer } from 'buffer';
 
-(globalThis as any).Buffer = Buffer;
+// Only polyfill when running somewhere without a native Buffer. Mixing the
+// polyfill with Node's Buffer breaks dhive's Buffer.concat calls.
+if (typeof (globalThis as any).Buffer === 'undefined') {
+  (globalThis as any).Buffer = Buffer;
+}
 
 // Mock chrome.storage for tests
 const storageData: Record<string, any> = {};

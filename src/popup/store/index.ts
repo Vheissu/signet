@@ -7,11 +7,26 @@
 
 import { create } from 'zustand';
 import type { ExtendedAccount, DynamicGlobalProperties } from '@hiveio/dhive';
-import type { Page, NavigationEntry, StoredAccount, Settings, AccountResources } from '@/core/types';
+import type {
+  Page,
+  NavigationEntry,
+  StoredAccount,
+  Settings,
+  AccountResources,
+  DAppRequest,
+  DAppResponse,
+  KeyRole,
+} from '@/core/types';
 import { DEFAULT_SETTINGS } from '@/core/types';
 import { encryptToString, decryptFromString } from '@/core/crypto/encryption';
 import { secureStorage } from '@/core/storage/secure-storage';
-import { getAccount, getDynamicGlobalProperties, getResourceCredits, getCurrentMedianHistoryPrice } from '@/core/hive/client';
+import {
+  getAccount,
+  getDynamicGlobalProperties,
+  getResourceCredits,
+  getCurrentMedianHistoryPrice,
+  setNodes,
+} from '@/core/hive/client';
 import { calculateVotingPower, calculateRC, parseAmount } from '@/core/hive/operations';
 
 export interface AppState {
@@ -41,6 +56,11 @@ export interface AppState {
   // Settings
   settings: Settings;
 
+  // dApp requests awaiting approval
+  pendingRequests: DAppRequest[];
+  /** True when this popup was opened by the background as an approval window. */
+  isRequestWindow: boolean;
+
   // UI
   toasts: Array<{ id: string; message: string; type: 'success' | 'error' | 'info' }>;
 
@@ -62,6 +82,18 @@ export interface AppState {
   addToast: (message: string, type: 'success' | 'error' | 'info') => void;
   removeToast: (id: string) => void;
   setLoading: (loading: boolean, message?: string) => void;
+  getDecryptedKey: (username: string, role: KeyRole) => Promise<string | null>;
+  loadPendingRequests: () => Promise<void>;
+  respondToRequest: (requestId: string, response: DAppResponse) => Promise<void>;
+}
+
+function isChromeRuntime(): boolean {
+  return typeof chrome !== 'undefined' && !!chrome?.runtime?.sendMessage;
+}
+
+function applyRpcSettings(settings: Settings): void {
+  const ordered = [settings.activeRpc, ...settings.rpcNodes.filter((n) => n !== settings.activeRpc)];
+  setNodes(ordered);
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -82,6 +114,9 @@ export const useStore = create<AppState>((set, get) => ({
   hivePriceUsd: 0,
   hbdPriceUsd: 0,
   settings: DEFAULT_SETTINGS,
+  pendingRequests: [],
+  isRequestWindow:
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mode') === 'request',
   toasts: [],
 
   // --- Navigation (persisted to session storage so popup reopen restores state) ---
@@ -130,6 +165,10 @@ export const useStore = create<AppState>((set, get) => ({
 
       // Load settings
       const settings = await secureStorage.getSettings();
+      applyRpcSettings(settings);
+
+      // Pick up anything a dApp asked for while the popup was closed
+      await get().loadPendingRequests();
 
       // Check if wallet is initialized (has accounts)
       const encryptedAccounts = await secureStorage.getEncryptedAccounts();
@@ -470,6 +509,54 @@ export const useStore = create<AppState>((set, get) => ({
     const newSettings = { ...settings, ...partial };
     await secureStorage.setSettings(newSettings);
     set({ settings: newSettings });
+    if (partial.activeRpc !== undefined || partial.rpcNodes !== undefined) {
+      applyRpcSettings(newSettings);
+      get().refreshAccountData();
+    }
+  },
+
+  // --- Keys ---
+
+  getDecryptedKey: async (username, role) => {
+    const { password, accounts } = get();
+    if (!password) return null;
+    const account = accounts.find((a) => a.username === username);
+    const encrypted = account?.keys[role];
+    if (!encrypted) return null;
+    try {
+      return await decryptFromString(encrypted, password);
+    } catch {
+      return null;
+    }
+  },
+
+  // --- dApp requests ---
+
+  loadPendingRequests: async () => {
+    if (!isChromeRuntime()) return;
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'GET_PENDING_REQUESTS' });
+      if (response?.success && Array.isArray(response.result)) {
+        set({ pendingRequests: response.result });
+      }
+    } catch {
+      // background unavailable (e.g. dev preview)
+    }
+  },
+
+  respondToRequest: async (requestId, response) => {
+    set((state) => ({
+      pendingRequests: state.pendingRequests.filter((r) => r.id !== requestId),
+    }));
+    if (!isChromeRuntime()) return;
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'REQUEST_RESPONSE',
+        payload: { requestId, response },
+      });
+    } catch {
+      // background unavailable
+    }
   },
 
   // --- UI ---

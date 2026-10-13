@@ -65,41 +65,54 @@ export type Page =
   | 'importKeys'
   | 'editAccount'
   | 'tokenDetail'
-  | 'contacts';
+  | 'contacts'
+  | 'approveRequest';
 
 export interface NavigationEntry {
   page: Page;
   params?: Record<string, any>;
 }
 
-// Message types for extension messaging
-export type MessageType =
-  | 'UNLOCK'
-  | 'LOCK'
-  | 'GET_STATUS'
+// dApp operation types. Each one is a request a web page can make through
+// window.signet (or the window.hive_keychain compatibility shim). Every one
+// of these needs explicit user approval in the extension before anything is
+// signed or broadcast.
+export type DAppRequestType =
   | 'SIGN_TRANSACTION'
   | 'SIGN_BUFFER'
+  | 'BROADCAST'
   | 'TRANSFER'
   | 'VOTE'
+  | 'POST'
   | 'CUSTOM_JSON'
   | 'DELEGATE'
   | 'POWER_UP'
   | 'POWER_DOWN'
   | 'DECODE_MEMO'
   | 'ENCODE_MEMO'
-  | 'REQUEST_HANDSHAKE'
   | 'ADD_ACCOUNT_AUTHORITY'
   | 'REMOVE_ACCOUNT_AUTHORITY'
   | 'WITNESS_VOTE'
   | 'PROXY'
-  | 'CREATE_PROPOSAL'
   | 'UPDATE_PROPOSAL_VOTE'
-  | 'REMOVE_PROPOSAL'
   | 'CONVERT'
   | 'RECURRENT_TRANSFER'
-  | 'SAVINGS_DEPOSIT'
-  | 'SAVINGS_WITHDRAW'
+  | 'SEND_TOKEN'
   | 'SIGNED_CALL';
+
+// Internal extension messages (popup <-> background <-> content script)
+export type InternalMessageType =
+  | 'UNLOCK'
+  | 'LOCK'
+  | 'GET_STATUS'
+  | 'REQUEST_HANDSHAKE'
+  | 'GET_PENDING_REQUESTS'
+  | 'REQUEST_RESPONSE'
+  | 'ACTIVITY'
+  | 'LOCKED'
+  | 'PENDING_REQUESTS_CHANGED';
+
+export type MessageType = DAppRequestType | InternalMessageType;
 
 export interface ExtensionMessage {
   type: MessageType;
@@ -112,6 +125,31 @@ export interface ExtensionResponse {
   result?: any;
   error?: string;
   requestId?: string;
+  pending?: boolean;
+}
+
+// A dApp request waiting for the user's decision. Stored in
+// chrome.storage.session so it survives service worker restarts.
+export interface DAppRequest {
+  id: string;
+  type: DAppRequestType;
+  payload: any;
+  origin: string;
+  tabId: number | null;
+  timestamp: number;
+}
+
+// Response delivered back to the dApp. Field names follow Hive Keychain so
+// existing dApps work unchanged through the compatibility shim.
+export interface DAppResponse {
+  success: boolean;
+  error: string | null;
+  result: any;
+  data: any;
+  message: string;
+  request_id: string;
+  publicKey?: string;
+  username?: string;
 }
 
 // Token (Hive Engine)

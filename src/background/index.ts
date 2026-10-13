@@ -7,41 +7,49 @@
  *
  * Handles:
  * - Extension lifecycle (install, startup)
- * - Auto-lock timer via chrome.alarms
+ * - Auto-lock via a one-minute alarm plus OS idle detection
  * - Message routing between popup, content scripts, and dApps
+ * - The approval window for dApp requests
  */
 
-import { handleMessage } from './message-handler';
+import {
+  handleMessage,
+  checkAutoLock,
+  touchActivity,
+  handleWindowClosed,
+  handleTabClosed,
+} from './message-handler';
+
+const AUTO_LOCK_ALARM = 'autoLockTick';
+
+function ensureAlarm(): void {
+  chrome.alarms.create(AUTO_LOCK_ALARM, { periodInMinutes: 1 });
+}
 
 // --- Extension Lifecycle ---
 
 chrome.runtime.onInstalled.addListener((details) => {
   console.log('[Signet] Installed:', details.reason);
-  chrome.alarms.create('autoLock', { periodInMinutes: 10 });
+  ensureAlarm();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  console.log('[Signet] Browser started');
+  ensureAlarm();
 });
+
+ensureAlarm();
 
 // --- Auto-Lock ---
 
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === 'autoLock') {
-    const state = await chrome.idle.queryState(60);
-    if (state === 'idle' || state === 'locked') {
-      console.log('[Signet] Auto-locking due to inactivity');
-      try {
-        await chrome.storage.session.remove('password');
-      } catch {
-        // session storage might not be available
-      }
-      try {
-        await chrome.runtime.sendMessage({ type: 'LOCKED' });
-      } catch {
-        // popup might not be open
-      }
-    }
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === AUTO_LOCK_ALARM) {
+    checkAutoLock();
+  }
+});
+
+chrome.idle.onStateChanged.addListener((state) => {
+  if (state === 'locked') {
+    checkAutoLock();
   }
 });
 
@@ -53,19 +61,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .catch((err) => {
       sendResponse({
         success: false,
-        error: err.message || 'Unknown error',
+        error: err?.message || 'Unknown error',
       });
     });
   return true;
 });
 
 // --- Activity Tracking ---
+// The popup opens a port while it is visible. Connect and disconnect both
+// count as activity, so the idle clock starts when the popup closes.
 
 chrome.runtime.onConnect.addListener((port) => {
-  chrome.alarms.create('autoLock', { periodInMinutes: 10 });
+  touchActivity();
   port.onDisconnect.addListener(() => {
-    chrome.alarms.create('autoLock', { periodInMinutes: 10 });
+    touchActivity();
   });
 });
 
-console.log('[Signet] Background service worker initialized');
+// --- Approval window / tab bookkeeping ---
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  handleWindowClosed(windowId);
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  handleTabClosed(tabId);
+});
