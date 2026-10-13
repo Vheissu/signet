@@ -14,7 +14,6 @@ Signet is a Chrome/Chromium browser extension that lets you manage Hive accounts
 - [Building from Source](#building-from-source)
 - [Developer Guide -- dApp Integration](#developer-guide----dapp-integration)
   - [Detecting Signet](#detecting-signet)
-  - [The window.signet API](#the-windowsignet-api)
   - [API Reference](#api-reference)
   - [Response Format](#response-format)
   - [Backward Compatibility with Hive Keychain](#backward-compatibility-with-hive-keychain)
@@ -35,27 +34,27 @@ Signet is a Chrome/Chromium browser extension that lets you manage Hive accounts
 
 | Category | Capabilities |
 |---|---|
-| **Wallet** | View HIVE, HBD, and Hive Power balances with live USD conversion. Full Hive Engine L2 token support with per-token price charts. |
-| **Transfers** | Send HIVE and HBD to any account. Memo support (plaintext and encrypted). |
+| **Wallet** | View HIVE, HBD, and Hive Power balances with live USD conversion and real CoinGecko price history (1h to 1y). Full Hive Engine L2 token support with 30-day market charts per token. |
+| **Transfers** | Send HIVE and HBD to any account. Memos starting with `#` are encrypted with your memo key; encrypted memos in History decrypt on demand. |
 | **Hive Engine Tokens** | View balances, transfer, stake, unstake, and delegate any Hive Engine token. Dedicated Tokens tab with D3.js price charts per token. |
 | **QR Codes / Payment Links** | Receive page generates QR codes. Two modes: Signet-native (`hive://` URI) and Hivesigner mobile URL. Scan or paste a link to auto-fill the Send form. |
 | **Staking** | Power Up (HIVE to HP) and Power Down (HP to HIVE). |
 | **Delegation** | Delegate and undelegate Hive Power to any account. |
-| **Governance** | Vote for witnesses, approve/reject proposals (DHF), and set a voting proxy. |
+| **Governance** | Vote for witnesses, approve/reject proposals (DHF), and set or clear a voting proxy. |
 | **Savings** | Deposit and withdraw from on-chain savings accounts. |
-| **Swap** | Convert between HIVE and HBD on-chain. |
+| **Swap** | Convert between HIVE and HBD on-chain, with estimates from the witness median price feed. |
 | **Multi-Account** | Manage unlimited Hive accounts. Switch between them instantly. |
-| **Account Key Editing** | Add or remove individual keys (posting, active, memo, owner) after initial account creation. |
-| **dApp Integration** | Full `window.signet` API for web applications, including VSC/Magi smart contract support via `requestSignedCall`. Backward-compatible `window.hive_keychain` shim. |
+| **Account Import** | Add an account with any private key or with the master password, which derives the posting, active and memo keys (the owner key is never stored unless pasted). Add or remove individual keys later. |
+| **dApp Integration** | Every request from a web page opens an approval window showing the site, account, key role and full operation. Full `window.signet` API plus a `window.hive_keychain` shim with Keychain's exact signatures, so PeakD, Ecency, Splinterlands and other Keychain dApps work unchanged. |
 | **VSC/Magi Smart Contracts** | `requestSignedCall()` lets dApps invoke VSC/Magi smart contract methods, broadcast as `custom_json` operations. |
 | **Biometric Unlock** | WebAuthn-based Touch ID / Windows Hello support. Credential stored in the platform's Secure Enclave. |
 | **Notification Center** | Monitors incoming transfers, claimable rewards, power down payments, savings interest, and delegation changes. Bell icon with unread badge. |
-| **Transaction History** | Financial operations only (no votes/comments noise). Hive Engine operations labeled as "Token Sent", "Token Staked", etc. Filter by type. Each transaction links to Hive Hub. |
-| **Auto-Lock** | Configurable idle timer (default 10 minutes). Wallet locks automatically when the browser is idle or the screen is locked. |
+| **Transaction History** | Financial operations only (no votes/comments noise), including savings interest, power down payments and recurring transfers. Hive Engine operations labeled as "Token Sent", "Token Staked", etc. Filter by type, page back through older activity, and open any transaction on Hive Hub. |
+| **Auto-Lock** | Configurable timeout (default 10 minutes). The wallet locks after that long without using the popup, when the OS reports you idle for that long, or immediately when the screen locks. |
 | **Nav State Persistence** | Popup remembers which page you were on when it closes. Reopening the popup restores your position. |
 | **Resource Credits** | Live display of voting power and resource credit percentages. |
-| **Configurable RPC** | Choose from multiple Hive API nodes or add your own. |
-| **Theme Support** | Dark and light mode. |
+| **Configurable RPC** | Choose from multiple Hive API nodes or add your own, with a latency test. The first node is primary and the rest are failovers. |
+| **Theme Support** | Dark and light themes. The font ships with the extension; nothing is fetched from Google Fonts. |
 
 ---
 
@@ -103,6 +102,10 @@ Your password is held in `chrome.storage.session`, which is:
 
 Private keys are decrypted only in memory at the moment a transaction is signed. They are never transmitted, never logged, and never written to disk in plaintext.
 
+### Every dApp Request Is Approved By You
+
+Web pages cannot sign anything on their own. A request from a page is queued by the background worker and shown in a dedicated approval window that lists the requesting origin (taken from the browser, not from the page), the account, the key role that will sign, and the complete operation. Privileged messages such as "deliver this response" or "unlock" are only accepted from Signet's own extension pages, never from content scripts.
+
 ---
 
 ## Installation
@@ -112,7 +115,7 @@ Private keys are decrypted only in memory at the moment a transaction is signed.
 **Prerequisites**: Node.js 18 or later.
 
 ```bash
-git clone https://github.com/user/signet.git
+git clone https://github.com/Vheissu/signet.git
 cd signet
 npm install
 npm run build
@@ -176,394 +179,106 @@ dist/
 
 ## Developer Guide -- dApp Integration
 
-Signet injects a `window.signet` API into every web page, enabling dApps to request wallet operations from the user. All methods return Promises and open a confirmation popup in the extension before executing.
+Signet injects a `window.signet` API into every web page before any page script runs. dApps use it to ask the wallet to sign or broadcast operations. Nothing is ever signed silently: every request opens a Signet approval window showing the requesting site, the account, the key role involved and the full operation, and the page only gets a response once the user approves or rejects.
 
 ### Detecting Signet
 
-Signet dispatches a `signet_installed` event on the window when it is ready. You can detect it in two ways:
-
 ```javascript
-// Option 1: Check the flag directly (if the page loaded after the extension)
-if (window.signet && window.signet.isInstalled()) {
-  console.log('Signet is available');
+// The API is present before your scripts run, so a direct check is enough:
+if (window.signet) {
+  console.log('Signet is available, version', window.signet.version);
 }
 
-// Option 2: Listen for the event (recommended)
-window.addEventListener('signet_installed', () => {
-  console.log('Signet is available');
-});
+// Listening for the event also works (fires once per page load):
+window.addEventListener('signet_installed', () => { /* ... */ });
 ```
 
 ### The window.signet API
 
-Every method returns a `Promise<SignetResponse>`. The user must approve each request in the extension popup. Requests time out after 5 minutes if no action is taken.
+Every method returns a `Promise<SignetResponse>`. Each method also accepts an optional trailing `callback` for Keychain-style code. Where a method takes a `username`, you may pass `null` to let the user choose the account in the approval window. Requests time out after 10 minutes if the user takes no action.
 
 ### API Reference
 
-#### `requestHandshake()`
+| Method | Signs with | Description |
+|---|---|---|
+| `requestHandshake()` | -- | Confirms Signet is installed; resolves with the extension version. |
+| `requestTransfer(from, to, amount, memo, currency, cb?, enforce?)` | active | Send HIVE or HBD. `amount` is a plain number string like `"1.000"`. Memos starting with `#` are encrypted. |
+| `requestVote(voter, author, permlink, weight)` | posting | Vote on a post or comment. `weight` is `-10000` to `10000`. |
+| `requestPost(username, title, body, parentPermlink, parentAuthor, jsonMetadata, permlink, commentOptions?)` | posting | Publish a post or comment, optionally with `comment_options`. |
+| `requestCustomJson(username, id, json, useActive?, display?)` | posting / active | Broadcast a `custom_json` operation (Hive Engine, games, follows). |
+| `requestSignBuffer(username, message, role?, cb?, title?)` | posting / active / memo | Sign an arbitrary message. Resolves with the hex signature and `publicKey`. |
+| `requestSignTransaction(username, tx, role?)` | active / posting | Sign a transaction without broadcasting. Missing `ref_block_*`/`expiration` are filled in. |
+| `requestBroadcast(username, operations, role?)` | posting / active | Sign and broadcast any array of `[name, payload]` operations. |
+| `requestDelegation(delegator, delegatee, amount, unit?)` | active | Delegate Hive Power. `unit` is `"HP"` or `"VESTS"`; `"0"` removes a delegation. |
+| `requestPowerUp(from, to, amount)` | active | Convert liquid HIVE to Hive Power. |
+| `requestPowerDown(account, amount, unit?)` | active | Start a 13-week power down. Amount in HP by default. |
+| `requestWitnessVote(account, witness, approve)` | active | Vote for or unvote a witness. |
+| `requestProxy(account, proxy)` | active | Set a voting proxy, or pass `""` to clear it. |
+| `requestUpdateProposalVote(voter, proposalIds, approve)` | active | Approve or unapprove DHF proposals. |
+| `requestEncodeMemo(username, receiver, message, role?)` | memo | Encrypt a message for another account. |
+| `requestDecodeMemo(username, memo, role?)` | memo | Decrypt a `#`-prefixed memo. |
+| `requestAddAccountAuthority(username, authorizedUsername, role, weight?)` | active | Grant another account posting or active authority. |
+| `requestRemoveAccountAuthority(username, authorizedUsername, role)` | active | Revoke that authority. |
+| `requestConvert(owner, amount, collateralized?)` | active | Convert HBD to HIVE, or HIVE to HBD when `collateralized` is true. |
+| `requestRecurrentTransfer(from, to, amount, currency, memo, recurrenceHours, executions)` | active | Schedule a recurring transfer. |
+| `requestSendToken(username, to, amount, memo, symbol)` | active | Transfer a Hive Engine token. |
+| `requestSignedCall(username, method, params, typeWif?)` | posting / active | VSC/Magi smart contract call, broadcast as `custom_json` with `method` as the id. |
 
-Verify that Signet is installed and the user has an unlocked wallet.
+**Example -- login with a signed challenge:**
 
 ```javascript
-const response = await window.signet.requestHandshake();
+const response = await window.signet.requestSignBuffer(null, `login:${Date.now()}`, 'posting');
 if (response.success) {
-  console.log('Signet is connected');
+  // response.username is the account the user picked,
+  // response.result is the hex signature, response.publicKey the posting key used.
+  await fetch('/api/login', { method: 'POST', body: JSON.stringify(response) });
 }
 ```
 
----
-
-#### `requestTransfer(from, to, amount, memo, currency)`
-
-Request a HIVE or HBD transfer.
-
-| Parameter | Type | Description |
-|---|---|---|
-| `from` | `string` | Sender's Hive username |
-| `to` | `string` | Recipient's Hive username |
-| `amount` | `string` | Amount to send (e.g. `"1.000"`) |
-| `memo` | `string` | Transfer memo (use `""` for no memo) |
-| `currency` | `string` | `"HIVE"` or `"HBD"` |
-
-```javascript
-const response = await window.signet.requestTransfer(
-  'alice',
-  'bob',
-  '10.000',
-  'Payment for services',
-  'HIVE'
-);
-```
-
----
-
-#### `requestVote(voter, author, permlink, weight)`
-
-Cast an upvote or downvote on a post or comment.
-
-| Parameter | Type | Description |
-|---|---|---|
-| `voter` | `string` | Voter's Hive username |
-| `author` | `string` | Post author |
-| `permlink` | `string` | Post permlink |
-| `weight` | `number` | Vote weight: `-10000` to `10000` (10000 = 100% upvote) |
-
-```javascript
-const response = await window.signet.requestVote(
-  'alice',
-  'bob',
-  'my-first-post',
-  10000
-);
-```
-
----
-
-#### `requestCustomJson(username, id, json, useActive)`
-
-Broadcast a `custom_json` operation (used by Hive Engine, Splinterlands, and many other dApps).
-
-| Parameter | Type | Description |
-|---|---|---|
-| `username` | `string` | Account broadcasting the operation |
-| `id` | `string` | Custom JSON id (e.g. `"ssc-mainnet-hive"`) |
-| `json` | `string` | JSON payload as a string |
-| `useActive` | `boolean` | `true` to sign with the active key instead of posting (default: `false`) |
+**Example -- Hive Engine custom JSON:**
 
 ```javascript
 const response = await window.signet.requestCustomJson(
   'alice',
   'ssc-mainnet-hive',
-  JSON.stringify({
-    contractName: 'tokens',
-    contractAction: 'transfer',
-    contractPayload: { symbol: 'DEC', to: 'bob', quantity: '100' }
-  }),
-  true
+  { contractName: 'tokens', contractAction: 'transfer',
+    contractPayload: { symbol: 'LEO', to: 'bob', quantity: '100' } },
+  true // active key
 );
 ```
-
----
-
-#### `requestSignedCall(username, method, params, typeWif)`
-
-Invoke a VSC/Magi smart contract method. Under the hood, this broadcasts a `custom_json` operation with the specified method and parameters, signed with the chosen key type. This is the primary way dApps interact with VSC (Virtual Smart Contracts) and Magi smart contract layers on Hive.
-
-| Parameter | Type | Description |
-|---|---|---|
-| `username` | `string` | Account calling the smart contract |
-| `method` | `string` | Smart contract method name (e.g. `"deposit"`, `"withdraw"`, `"swap"`) |
-| `params` | `string` | JSON-encoded parameters for the method |
-| `typeWif` | `string` | Key type to sign with: `"posting"` (default), `"active"`, or `"memo"` |
-
-```javascript
-// Example: call a VSC smart contract method
-const response = await window.signet.requestSignedCall(
-  'alice',
-  'deposit',
-  JSON.stringify({ amount: '100.000', token: 'HIVE' }),
-  'active'
-);
-
-if (response.success) {
-  console.log('Smart contract call broadcast:', response.result);
-} else {
-  console.error('Call failed:', response.error);
-}
-```
-
----
-
-#### `requestSignBuffer(username, message, role)`
-
-Sign an arbitrary message buffer (used for authentication, proof of identity, etc.).
-
-| Parameter | Type | Description |
-|---|---|---|
-| `username` | `string` | Account to sign with |
-| `message` | `string` | Message to sign |
-| `role` | `string` | Key role: `"posting"` (default) or `"active"` |
-
-```javascript
-const response = await window.signet.requestSignBuffer(
-  'alice',
-  'Login challenge: abc123',
-  'posting'
-);
-if (response.success) {
-  console.log('Signature:', response.result);
-}
-```
-
----
-
-#### `requestSignTransaction(username, tx, role)`
-
-Sign a pre-built transaction object without broadcasting.
-
-| Parameter | Type | Description |
-|---|---|---|
-| `username` | `string` | Account to sign with |
-| `tx` | `object` | Transaction object (dhive-compatible format) |
-| `role` | `string` | Key role: `"posting"` or `"active"` (default: `"active"`) |
-
-```javascript
-const response = await window.signet.requestSignTransaction(
-  'alice',
-  {
-    operations: [
-      ['transfer', { from: 'alice', to: 'bob', amount: '1.000 HIVE', memo: '' }]
-    ],
-    extensions: []
-  },
-  'active'
-);
-```
-
----
-
-#### `requestDelegation(delegator, delegatee, vestingShares)`
-
-Delegate Hive Power to another account. Set `vestingShares` to `"0.000000 VESTS"` to remove an existing delegation.
-
-| Parameter | Type | Description |
-|---|---|---|
-| `delegator` | `string` | Account delegating HP |
-| `delegatee` | `string` | Account receiving delegation |
-| `vestingShares` | `string` | Amount in VESTS (e.g. `"1000.000000 VESTS"`) |
-
-```javascript
-const response = await window.signet.requestDelegation(
-  'alice',
-  'bob',
-  '1000.000000 VESTS'
-);
-```
-
----
-
-#### `requestPowerUp(from, to, amount)`
-
-Convert liquid HIVE to Hive Power (stake).
-
-| Parameter | Type | Description |
-|---|---|---|
-| `from` | `string` | Account providing the HIVE |
-| `to` | `string` | Account receiving the Hive Power |
-| `amount` | `string` | Amount (e.g. `"100.000 HIVE"`) |
-
-```javascript
-const response = await window.signet.requestPowerUp(
-  'alice',
-  'alice',
-  '100.000 HIVE'
-);
-```
-
----
-
-#### `requestPowerDown(account, vestingShares)`
-
-Begin a 13-week Power Down to convert Hive Power back to liquid HIVE.
-
-| Parameter | Type | Description |
-|---|---|---|
-| `account` | `string` | Account to power down |
-| `vestingShares` | `string` | Amount in VESTS to power down |
-
-```javascript
-const response = await window.signet.requestPowerDown(
-  'alice',
-  '50000.000000 VESTS'
-);
-```
-
----
-
-#### `requestWitnessVote(account, witness, approve)`
-
-Vote for or unvote a Hive witness.
-
-| Parameter | Type | Description |
-|---|---|---|
-| `account` | `string` | Voter's account |
-| `witness` | `string` | Witness to vote for |
-| `approve` | `boolean` | `true` to vote, `false` to unvote |
-
-```javascript
-const response = await window.signet.requestWitnessVote(
-  'alice',
-  'good-witness',
-  true
-);
-```
-
----
-
-#### `requestDecodeMemo(username, memo)`
-
-Decrypt an encrypted memo using the account's memo key.
-
-| Parameter | Type | Description |
-|---|---|---|
-| `username` | `string` | Account whose memo key to use |
-| `memo` | `string` | Encrypted memo string (starts with `#`) |
-
-```javascript
-const response = await window.signet.requestDecodeMemo(
-  'alice',
-  '#encoded-memo-here'
-);
-if (response.success) {
-  console.log('Decoded:', response.result);
-}
-```
-
----
-
-#### `requestEncodeMemo(username, receiver, message)`
-
-Encrypt a memo so only the receiver can read it.
-
-| Parameter | Type | Description |
-|---|---|---|
-| `username` | `string` | Sender's account |
-| `receiver` | `string` | Recipient's account |
-| `message` | `string` | Plaintext message to encrypt |
-
-```javascript
-const response = await window.signet.requestEncodeMemo(
-  'alice',
-  'bob',
-  'This is a secret message'
-);
-if (response.success) {
-  console.log('Encrypted memo:', response.result);
-}
-```
-
----
-
-#### `requestConvert(owner, amount)`
-
-Convert HBD to HIVE (3.5-day conversion via the blockchain's internal market).
-
-| Parameter | Type | Description |
-|---|---|---|
-| `owner` | `string` | Account initiating the conversion |
-| `amount` | `string` | Amount of HBD to convert (e.g. `"50.000 HBD"`) |
-
-```javascript
-const response = await window.signet.requestConvert(
-  'alice',
-  '50.000 HBD'
-);
-```
-
----
 
 ### Response Format
 
-Every API method returns a `Promise` that resolves to a `SignetResponse` object:
+Responses use the same field names as Hive Keychain, so code written for either wallet can read them:
 
 ```typescript
 interface SignetResponse {
-  success: boolean;   // true if the operation completed successfully
-  result?: any;       // operation-specific result data (transaction ID, signature, etc.)
-  error?: string;     // human-readable error message if success is false
+  success: boolean;
+  error: string | null;   // short code: "user_cancel", "timeout", "not_initialized", "error", ...
+  message: string;        // human-readable explanation
+  result: any;            // broadcast confirmation { id, block_num, ... }, signature, signed tx, encrypted memo...
+  data: any;              // the original request payload plus its type
+  request_id: string;
+  publicKey?: string;     // for signBuffer / signTransaction / memo operations
+  username?: string;      // for signBuffer when the user picked the account
 }
 ```
 
-**Example -- handling success and failure:**
-
-```javascript
-const response = await window.signet.requestTransfer(
-  'alice', 'bob', '1.000', '', 'HIVE'
-);
-
-if (response.success) {
-  console.log('Transfer broadcast:', response.result);
-} else {
-  console.error('Transfer failed:', response.error);
-  // Possible errors:
-  //   "Request timed out"       -- user did not respond within 5 minutes
-  //   "User rejected request"   -- user clicked Deny
-  //   "Wallet is locked"        -- wallet needs to be unlocked first
-  //   "Key not available"       -- required key is not imported for this account
-}
-```
+A request is rejected (not just timed out) when the user clicks Reject, closes the approval window, or closes the tab that made the request. If the wallet is locked, the approval window asks for the password first and then shows the request, so dApps do not need to handle a separate "locked" state.
 
 ### Backward Compatibility with Hive Keychain
 
-Signet exposes a `window.hive_keychain` object that mirrors the Hive Keychain API using callbacks. dApps built for Hive Keychain will work with Signet without any code changes.
+Signet exposes `window.hive_keychain` with the Hive Keychain method signatures and argument order, including Keychain's capitalised key names (`"Posting"`, `"Active"`, `"Memo"`). Existing dApps work without changes:
 
 ```javascript
-// This existing Hive Keychain code works as-is with Signet:
-window.hive_keychain.requestTransfer(
-  'alice', 'bob', '1.000', 'memo', 'HIVE',
-  function(response) {
-    console.log(response);
-  }
-);
+window.hive_keychain.requestVote('alice', 'my-post', 'bob', 10000, (response) => {
+  console.log(response.success, response.result);
+});
 ```
 
-The `requestSignedCall` method is also available through the `hive_keychain` shim for dApps that use the callback pattern:
+Supported shim methods: `requestHandshake`, `requestVerifyKey`, `requestEncodeMessage`, `requestSignBuffer`, `requestAddAccountAuthority`, `requestRemoveAccountAuthority`, `requestBroadcast`, `requestSignTx`, `requestSignedCall`, `requestPost`, `requestVote`, `requestCustomJson`, `requestTransfer`, `requestSendToken`, `requestDelegation`, `requestWitnessVote`, `requestProxy`, `requestPowerUp`, `requestPowerDown`, `requestUpdateProposalVote`, `requestRecurrentTransfer`, `requestConversion`.
 
-```javascript
-window.hive_keychain.requestSignedCall(
-  'alice',
-  'deposit',
-  JSON.stringify({ amount: '100.000', token: 'HIVE' }),
-  'active',
-  function(response) {
-    console.log(response);
-  }
-);
-```
-
-Signet also fires the `hive_keychain_installed` event for dApps that listen for it.
-
-The `window.signet` Promise-based API is recommended for new integrations, as it supports `async`/`await` and provides a cleaner developer experience.
+Signet also fires the `hive_keychain_installed` event. Only one of Signet and Hive Keychain should be enabled at a time, since both define `window.hive_keychain`.
 
 ---
 
@@ -631,7 +346,7 @@ Signet includes a notification system that monitors account activity and surface
 | **Incoming transfers** | Notifies when another account sends you HIVE or HBD. |
 | **Claimable rewards** | Reminds you when author/curation rewards are available to claim. |
 | **Power down payments** | Alerts when the next weekly power down payment is approaching. |
-| **Savings interest** | Shows your HBD savings balance and estimated monthly interest earnings. |
+| **Savings interest** | Monthly reminder of your HBD savings balance and estimated interest at the current chain rate. |
 | **Delegation changes** | Notifies when another account delegates HP to you. |
 
 The monitor polls once per minute. Notifications are stored locally (up to 50) and can be marked as read individually or all at once, or cleared entirely. Tapping a notification navigates to the relevant page (e.g., tapping a transfer notification opens the History page).
@@ -649,7 +364,7 @@ Signet provides full support for Hive Engine (Layer 2) tokens alongside native H
 - **Staking**: Stake tokens to earn rewards or participate in governance.
 - **Unstaking**: Begin unstaking tokens (subject to the token's cooldown period).
 - **Delegation**: Delegate staked tokens to another account, or undelegate.
-- **Price Charts**: Each token's detail page shows a D3.js-rendered 24-hour price chart with HIVE-denominated pricing, gradient fill, grid lines, and axis labels.
+- **Price Charts**: Each token's detail page shows 30 days of daily closing prices from the Hive Engine market, priced in HIVE. Tokens with no trades say so instead of showing a chart.
 - **USD Valuation**: Total token value is calculated as token quantity multiplied by the token's HIVE price multiplied by the HIVE/USD rate.
 
 ### Dedicated Tokens Tab
@@ -668,12 +383,16 @@ The History page displays a filtered view of financial operations for the active
 
 The history focuses on financially relevant operations and excludes noise like votes and comments. Supported operation types include:
 
-- **L1 operations**: Transfers (sent/received), Power Up, Power Down, delegations, reward claims (author, curation, witness), savings deposits/withdrawals, conversions, and filled orders.
+- **L1 operations**: Transfers (sent/received/recurring), Power Up, Power Down and its weekly payments, delegations and returned delegations, reward claims (author, curation, benefactor, witness, proposal), savings deposits/withdrawals and interest, conversions, and filled orders.
 - **Hive Engine operations**: Labeled with human-readable names -- "Token Sent", "Token Received", "Token Staked", "Token Unstaked", "Token Delegated", "Token Undelegated", "Market Buy", "Market Sell".
 
 ### Filtering
 
-Scrollable filter pills at the top let you narrow the view by category: All, Transfers, Tokens (Hive Engine), Power, Delegation, Rewards, and Savings. Each filter shows a count badge so you can see at a glance how many operations exist in each category.
+Scrollable filter pills at the top let you narrow the view by category: All, Transfers, Tokens (Hive Engine), Power, Delegation, Rewards, Savings, and Conversions. Each filter shows a count badge. A "Load older activity" button pages further back through the account's history.
+
+### Encrypted Memos
+
+Memos that start with `#` are encrypted on-chain. History shows them as "Encrypted memo"; tapping one decrypts it locally with your memo key.
 
 ### Hive Hub Links
 
@@ -683,7 +402,9 @@ Every transaction row includes a link icon (visible on hover) that opens the tra
 
 ## Account Key Management
 
-After adding an account to Signet, you can add or remove individual keys at any time through the **Edit Account** page (accessible from Settings or the account menu).
+When adding an account, paste either a private key or the account's master password into the single key field. A private key is matched to its role against the account's on-chain public keys; the master password derives the posting, active and memo keys and imports whichever ones match. The owner key is only stored if you paste it directly.
+
+After adding an account, you can add or remove individual keys at any time through the **Edit Account** page (accessible from Settings or the account menu).
 
 ### Capabilities
 
@@ -748,17 +469,20 @@ signet/
   src/
     background/
       index.ts                 # Service worker: lifecycle, auto-lock, message routing
-      message-handler.ts       # Handles dApp requests from content scripts
+      message-handler.ts       # dApp request queue, approval window, auto-lock
     content/
-      index.ts                 # Content script: bridges inpage <-> background
+      index.ts                 # Content script: relays page <-> background
     inpage/
-      index.ts                 # Injected API: window.signet + window.hive_keychain
+      index.ts                 # MAIN-world script: window.signet + window.hive_keychain
     core/
       biometric/
         webauthn.ts            # WebAuthn biometric enrollment and authentication
       crypto/
         encryption.ts          # AES-256-GCM encryption via Web Crypto API
-        hive-keys.ts           # Hive key validation and role identification
+        hive-keys.ts           # Key validation, role detection, signing, memo encryption
+      dapp/
+        requests.ts            # Describes each dApp request type for the approval screen
+        execute.ts             # Signs/broadcasts an approved request
       hive/
         client.ts              # Hive RPC client (dhive wrapper)
         operations.ts          # Amount parsing, VESTS/HP conversion, utilities
@@ -769,6 +493,8 @@ signet/
         csv-parser.ts          # Password manager CSV import (1Password, Bitwarden, LastPass)
       notifications/
         monitor.ts             # Notification polling and event detection
+      prices/
+        index.ts               # CoinGecko and Hive Engine price history with caching
       qr/
         index.ts               # QR code generation, scanning, and URI parsing
       storage/
@@ -816,7 +542,8 @@ signet/
         Governance.tsx         # Witness voting and proposals
         Savings.tsx            # Savings deposits and withdrawals
         Swap.tsx               # HIVE <-> HBD conversion
-        History.tsx            # Transaction history (with filters)
+        History.tsx            # Transaction history (with filters and paging)
+        ApproveRequest.tsx     # dApp request approval screen
         Settings.tsx           # Extension settings
         AddAccount.tsx         # Add/import a Hive account
         EditAccount.tsx        # Add/remove individual keys on an existing account
