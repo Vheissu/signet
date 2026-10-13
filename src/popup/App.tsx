@@ -59,6 +59,8 @@ export function App() {
   const isLocked = useStore((s) => s.isLocked);
   const isInitialized = useStore((s) => s.isInitialized);
   const hasPending = useStore((s) => s.pendingRequests.length > 0);
+  const pendingLoaded = useStore((s) => s.pendingRequestsLoaded);
+  const isRequestWindow = useStore((s) => s.isRequestWindow);
   const loadPendingRequests = useStore((s) => s.loadPendingRequests);
   const lock = useStore((s) => s.lock);
   const theme = useStore((s) => s.settings.theme);
@@ -66,6 +68,15 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  // The approval window exists only to serve the queue. Once the queue has
+  // been read and is empty (every request answered, or the requesting tab
+  // went away), close it.
+  useEffect(() => {
+    if (isRequestWindow && pendingLoaded && !hasPending) {
+      window.close();
+    }
+  }, [isRequestWindow, pendingLoaded, hasPending]);
 
   useEffect(() => {
     initialize();

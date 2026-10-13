@@ -58,6 +58,8 @@ export interface AppState {
 
   // dApp requests awaiting approval
   pendingRequests: DAppRequest[];
+  /** Set once the queue has been read from the background at least once. */
+  pendingRequestsLoaded: boolean;
   /** True when this popup was opened by the background as an approval window. */
   isRequestWindow: boolean;
 
@@ -115,6 +117,7 @@ export const useStore = create<AppState>((set, get) => ({
   hbdPriceUsd: 0,
   settings: DEFAULT_SETTINGS,
   pendingRequests: [],
+  pendingRequestsLoaded: false,
   isRequestWindow:
     typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mode') === 'request',
   toasts: [],
@@ -537,7 +540,7 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_PENDING_REQUESTS' });
       if (response?.success && Array.isArray(response.result)) {
-        set({ pendingRequests: response.result });
+        set({ pendingRequests: response.result, pendingRequestsLoaded: true });
       }
     } catch {
       // background unavailable (e.g. dev preview)

@@ -22,7 +22,6 @@ export function ApproveRequest() {
   const respondToRequest = useStore((s) => s.respondToRequest);
   const getDecryptedKey = useStore((s) => s.getDecryptedKey);
   const refreshAccountData = useStore((s) => s.refreshAccountData);
-  const isRequestWindow = useStore((s) => s.isRequestWindow);
   const addToast = useStore((s) => s.addToast);
 
   const request: DAppRequest | undefined = pendingRequests[0];
@@ -34,8 +33,11 @@ export function ApproveRequest() {
   const [error, setError] = useState('');
 
   // Which account will sign. The dApp's choice wins when it is in the wallet.
+  // A transfer without `enforce` (Keychain semantics) lets the user pick.
   const requestedUser = description?.username || null;
   const requestedInWallet = !!requestedUser && accounts.some((a) => a.username === requestedUser);
+  const canSwitchAccount =
+    !requestedUser || !requestedInWallet && request?.type === 'TRANSFER' && !request.payload?.enforce;
   const username = requestedInWallet ? requestedUser! : chosenAccount;
   const account = accounts.find((a) => a.username === username);
   const hasKey = !!account && !!description && !!account.keys[description.keyRole];
@@ -45,13 +47,6 @@ export function ApproveRequest() {
     setShowPicker(false);
     setChosenAccount(activeAccountName || accounts[0]?.username || '');
   }, [request?.id]);
-
-  // Close the approval window once the queue is empty
-  useEffect(() => {
-    if (isRequestWindow && pendingRequests.length === 0) {
-      window.close();
-    }
-  }, [isRequestWindow, pendingRequests.length]);
 
   if (!request || !description) return null;
 
@@ -90,7 +85,7 @@ export function ApproveRequest() {
     setIsWorking(false);
   };
 
-  const accountMissing = !!requestedUser && !requestedInWallet;
+  const accountMissing = !!requestedUser && !requestedInWallet && !canSwitchAccount;
 
   return (
     <div className="flex flex-col h-full bg-bg">
@@ -129,7 +124,7 @@ export function ApproveRequest() {
           ) : (
             <button
               type="button"
-              disabled={requestedInWallet || accounts.length < 2}
+              disabled={!canSwitchAccount || accounts.length < 2}
               onClick={() => setShowPicker((v) => !v)}
               className="w-full flex items-center gap-3 px-4 py-3 text-left disabled:cursor-default"
             >
@@ -140,7 +135,7 @@ export function ApproveRequest() {
                   @{username || 'Select an account'}
                 </p>
               </div>
-              {!requestedInWallet && accounts.length > 1 && (
+              {canSwitchAccount && accounts.length > 1 && (
                 <ChevronDown size={14} className="text-text-tertiary" />
               )}
             </button>
