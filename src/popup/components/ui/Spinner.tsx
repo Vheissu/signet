@@ -21,16 +21,10 @@ export function Spinner({ size = 'md', className = '' }: SpinnerProps) {
         />
         <path
           d="M12 2a10 10 0 0 1 10 10"
-          stroke="url(#sg)"
+          stroke="currentColor"
           strokeWidth="2.5"
           strokeLinecap="round"
         />
-        <defs>
-          <linearGradient id="sg" x1="12" y1="2" x2="22" y2="12">
-            <stop stopColor="#E31337" />
-            <stop offset="1" stopColor="#F4845F" />
-          </linearGradient>
-        </defs>
       </svg>
     </div>
   );

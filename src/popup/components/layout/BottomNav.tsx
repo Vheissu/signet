@@ -20,7 +20,7 @@ export function BottomNav() {
   const resetTo = useStore((s) => s.resetTo);
 
   return (
-    <nav className="flex items-stretch h-14 border-t border-border bg-surface/80 backdrop-blur-md flex-shrink-0">
+    <nav className="flex items-stretch h-14 border-t border-border bg-surface flex-shrink-0">
       {navItems.map(({ page, icon: Icon, label }) => {
         const isActive = currentPage === page;
         return (

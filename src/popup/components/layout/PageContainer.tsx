@@ -25,7 +25,7 @@ export function PageContainer({
     <div className="flex flex-col h-full overflow-hidden bg-bg animate-fade-in">
       {/* Page header */}
       {(title || showBack) && (
-        <div className="flex items-center justify-between px-5 h-14 border-b border-border bg-surface/80 backdrop-blur-md flex-shrink-0">
+        <div className="flex items-center justify-between px-5 h-14 border-b border-border bg-surface flex-shrink-0">
           <div className="flex items-center gap-3">
             {showBack && (
               <button

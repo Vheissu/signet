@@ -116,8 +116,9 @@ export async function generateQRDataUrl(
     width: options?.width || 200,
     margin: 2,
     color: {
-      dark: options?.darkColor || '#F0ECF5',
-      light: options?.lightColor || '#1A1128',
+      // Dark modules on a light background scan most reliably, whatever the theme
+      dark: options?.darkColor || '#1A1128',
+      light: options?.lightColor || '#FFFFFF',
     },
     errorCorrectionLevel: 'M',
   });

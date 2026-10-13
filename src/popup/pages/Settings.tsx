@@ -11,6 +11,8 @@ import {
   Fingerprint,
   Users,
   Activity,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { testAllNodes, type RPCNode } from '@/core/hive/rpc';
 
@@ -230,6 +232,36 @@ export function Settings() {
                 </button>
               </div>
             )}
+          </Card>
+        </div>
+
+        {/* Appearance */}
+        <div>
+          <SectionTitle>Appearance</SectionTitle>
+          <Card variant="elevated" padding="none">
+            <div className="px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {settings.theme === 'light' ? (
+                  <Sun size={16} className="text-text-tertiary" />
+                ) : (
+                  <Moon size={16} className="text-text-tertiary" />
+                )}
+                <span className="text-sm text-text-primary">Theme</span>
+              </div>
+              <div className="flex bg-surface-overlay rounded-lg p-0.5">
+                {(['dark', 'light'] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => updateSettings({ theme: t })}
+                    className={`px-3 py-1 rounded-md text-xs font-semibold capitalize transition-colors ${
+                      settings.theme === t ? 'bg-surface text-text-primary' : 'text-text-tertiary hover:text-text-secondary'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
           </Card>
         </div>
 

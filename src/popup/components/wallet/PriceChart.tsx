@@ -162,7 +162,7 @@ export function PriceChart({ currentPrice, symbol = 'HIVE' }: PriceChartProps) {
       <div className="px-4 pt-4 pb-1 flex items-start justify-between">
         <div>
           <p className="text-xs text-text-secondary font-medium">{symbol} Price</p>
-          <p className="text-2xl font-extrabold text-text-primary tracking-tight animate-count">
+          <p className="text-2xl font-extrabold text-text-primary animate-count">
             ${currentPrice.toFixed(decimals)}
           </p>
         </div>

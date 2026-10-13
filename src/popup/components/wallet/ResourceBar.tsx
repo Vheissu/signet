@@ -17,13 +17,13 @@ export function ResourceBar() {
       <ResourceItem
         label="Voting Power"
         value={resources.votingPower}
-        color="#E31337"
+        color="var(--color-hive)"
         bgColor="bg-hive/8"
       />
       <ResourceItem
         label="Resource Credits"
         value={resources.resourceCredits}
-        color="#5CEAA0"
+        color="var(--color-success)"
         bgColor="bg-success/8"
       />
     </div>

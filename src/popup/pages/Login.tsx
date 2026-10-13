@@ -71,13 +71,9 @@ export function Login() {
 
   return (
     <div className="flex flex-col h-full items-center justify-center bg-bg px-8">
-      {/* Decorative elements */}
-      <div className="absolute top-8 right-8 w-20 h-20 rounded-full bg-coral/5" />
-      <div className="absolute bottom-16 left-6 w-12 h-12 rounded-full bg-hive/5" />
-
       {/* Logo */}
       <div className="relative mb-8">
-        <div className="w-16 h-16 rounded-2xl gradient-hero flex items-center justify-center glow-hive">
+        <div className="w-16 h-16 rounded-2xl gradient-hero flex items-center justify-center">
           <svg width="32" height="32" viewBox="0 0 40 40" fill="none">
             <path
               d="M20 4L34 12V28L20 36L6 28V12L20 4Z"
@@ -92,10 +88,9 @@ export function Login() {
             />
           </svg>
         </div>
-        <div className="absolute -top-1 -right-2 w-4 h-4 rounded-full bg-success/25" />
       </div>
 
-      <h1 className="text-2xl font-extrabold text-text-primary mb-1 tracking-tight">
+      <h1 className="text-2xl font-extrabold text-text-primary mb-1">
         Welcome Back
       </h1>
       <p className="text-sm text-text-secondary mb-8">
@@ -110,7 +105,7 @@ export function Login() {
             disabled={isBioAuth}
             className="w-full flex flex-col items-center gap-3 py-5 rounded-2xl bg-surface-elevated border border-border hover:border-hive/30 transition-all active:scale-[0.98] disabled:opacity-50"
           >
-            <div className={`w-12 h-12 rounded-xl bg-hive/10 flex items-center justify-center ${isBioAuth ? 'animate-pulse-glow' : ''}`}>
+            <div className={`w-12 h-12 rounded-xl bg-hive/10 flex items-center justify-center ${isBioAuth ? 'animate-breathe' : ''}`}>
               <Fingerprint size={24} className="text-hive" />
             </div>
             <span className="text-sm font-semibold text-text-primary">

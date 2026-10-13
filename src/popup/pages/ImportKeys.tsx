@@ -295,7 +295,7 @@ export function ImportKeys() {
 
       {step === 'importing' && (
         <div className="flex flex-col items-center justify-center py-16">
-          <div className="w-12 h-12 rounded-2xl bg-hive/10 flex items-center justify-center mb-4 animate-pulse-glow">
+          <div className="w-12 h-12 rounded-2xl bg-hive/10 flex items-center justify-center mb-4 animate-breathe">
             <Key size={24} className="text-hive" />
           </div>
           <p className="text-sm font-semibold text-text-primary mb-1">

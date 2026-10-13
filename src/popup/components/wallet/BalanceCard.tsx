@@ -18,23 +18,23 @@ export function BalanceCard() {
             <circle
               cx="18" cy="18" r="14"
               fill="none"
-              stroke="rgba(255,255,255,0.06)"
+              stroke="var(--color-border)"
               strokeWidth="4"
             />
             {/* HIVE portion (red) */}
             <circle
               cx="18" cy="18" r="14"
               fill="none"
-              stroke="#E31337"
+              stroke="var(--color-hive)"
               strokeWidth="4"
               strokeDasharray={`${hivePercent * 0.88} ${88 - hivePercent * 0.88}`}
               strokeLinecap="round"
             />
-            {/* HBD portion (coral) */}
+            {/* HBD portion (mint) */}
             <circle
               cx="18" cy="18" r="14"
               fill="none"
-              stroke="#5CEAA0"
+              stroke="var(--color-success)"
               strokeWidth="4"
               strokeDasharray={`${hbdPercent * 0.88} ${88 - hbdPercent * 0.88}`}
               strokeDashoffset={`-${hivePercent * 0.88}`}
@@ -51,7 +51,7 @@ export function BalanceCard() {
         {/* Values */}
         <div className="flex-1">
           <p className="text-xs font-medium text-text-secondary mb-0.5">Portfolio Value</p>
-          <p className="text-2xl font-extrabold text-text-primary tracking-tight animate-count">
+          <p className="text-2xl font-extrabold text-text-primary animate-count">
             {formatUsd(balances.totalUsd)}
           </p>
           <div className="flex gap-4 mt-1.5">

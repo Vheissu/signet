@@ -109,7 +109,7 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
       <div className="fixed inset-0 z-30" onClick={onClose} />
 
       {/* Panel */}
-      <div className="absolute top-full right-4 mt-1.5 w-[340px] max-h-[420px] bg-surface-elevated border border-border rounded-2xl shadow-xl z-40 overflow-hidden animate-fade-in flex flex-col">
+      <div className="absolute top-full right-4 mt-1.5 w-[340px] max-h-[420px] bg-surface-elevated border border-border rounded-2xl pop z-40 overflow-hidden animate-fade-in flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="text-sm font-bold text-text-primary">Notifications</h3>

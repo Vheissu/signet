@@ -12,10 +12,10 @@ export function ToastContainer() {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className={`pointer-events-auto flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border backdrop-blur-md toast-enter
-            ${toast.type === 'success' ? 'bg-success/10 border-success/20 text-success' : ''}
-            ${toast.type === 'error' ? 'bg-error/10 border-error/20 text-error' : ''}
-            ${toast.type === 'info' ? 'bg-info/10 border-info/20 text-info' : ''}
+          className={`pointer-events-auto flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border bg-surface-elevated pop toast-enter
+            ${toast.type === 'success' ? 'border-success/30 text-success' : ''}
+            ${toast.type === 'error' ? 'border-error/30 text-error' : ''}
+            ${toast.type === 'info' ? 'border-info/30 text-info' : ''}
           `}
         >
           {toast.type === 'success' && <CheckCircle size={16} className="flex-shrink-0" />}

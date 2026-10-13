@@ -22,7 +22,7 @@ export function Header() {
   };
 
   return (
-    <header className="relative flex items-center justify-between px-4 h-14 border-b border-border bg-surface/80 backdrop-blur-md z-20 flex-shrink-0">
+    <header className="relative flex items-center justify-between px-4 h-14 border-b border-border bg-surface z-20 flex-shrink-0">
       {/* Account selector */}
       <button
         onClick={() => setShowDropdown(!showDropdown)}
@@ -68,7 +68,7 @@ export function Header() {
             className="fixed inset-0 z-30"
             onClick={() => setShowDropdown(false)}
           />
-          <div className="absolute top-full left-4 mt-1.5 w-56 bg-surface-elevated border border-border rounded-xl shadow-xl z-40 overflow-hidden animate-fade-in">
+          <div className="absolute top-full left-4 mt-1.5 w-56 bg-surface-elevated border border-border rounded-xl pop z-40 overflow-hidden animate-fade-in">
             {accounts.map((account) => (
               <button
                 key={account.username}

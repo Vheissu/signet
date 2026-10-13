@@ -112,7 +112,7 @@ export function Receive() {
               <img
                 src={qrDataUrl}
                 alt={`QR code for @${activeAccountName}`}
-                className="w-48 h-48 rounded-xl"
+                className="w-48 h-48 rounded-xl bg-white p-1"
               />
               <p className="text-[10px] text-text-tertiary text-center max-w-[220px]">
                 {qrMode === 'mobile'

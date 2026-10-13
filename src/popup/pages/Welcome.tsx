@@ -11,7 +11,7 @@ export function Welcome() {
       <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
         {/* Logo */}
         <div className="relative mb-8">
-          <div className="w-20 h-20 rounded-3xl gradient-hero flex items-center justify-center glow-hive animate-pulse-glow">
+          <div className="w-20 h-20 rounded-3xl gradient-hero flex items-center justify-center">
             <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
               <path
                 d="M20 4L34 12V28L20 36L6 28V12L20 4Z"
@@ -26,12 +26,9 @@ export function Welcome() {
               />
             </svg>
           </div>
-          {/* Decorative circles */}
-          <div className="absolute -top-2 -right-3 w-5 h-5 rounded-full bg-coral/30" />
-          <div className="absolute -bottom-1 -left-4 w-3 h-3 rounded-full bg-success/30" />
         </div>
 
-        <h1 className="text-3xl font-extrabold text-text-primary mb-2 tracking-tight">
+        <h1 className="text-3xl font-extrabold text-text-primary mb-2">
           Signet
         </h1>
         <p className="text-sm text-text-secondary mb-10 leading-relaxed max-w-[260px]">
@@ -48,14 +45,14 @@ export function Welcome() {
           />
           <FeatureRow
             icon={<Zap size={16} />}
-            title="Lightning Fast"
-            description="Built with modern tech for instant response"
+            title="Keys Stay Here"
+            description="Encrypted on this device, never uploaded"
             accent="bg-coral/12 text-coral"
           />
           <FeatureRow
             icon={<Globe size={16} />}
-            title="Full dApp Support"
-            description="Seamless Hive ecosystem integration"
+            title="Works With Hive Apps"
+            description="Approve every request from PeakD, Ecency, games and more"
             accent="bg-success/12 text-success"
           />
         </div>

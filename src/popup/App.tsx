@@ -61,6 +61,11 @@ export function App() {
   const hasPending = useStore((s) => s.pendingRequests.length > 0);
   const loadPendingRequests = useStore((s) => s.loadPendingRequests);
   const lock = useStore((s) => s.lock);
+  const theme = useStore((s) => s.settings.theme);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
 
   useEffect(() => {
     initialize();
@@ -91,9 +96,9 @@ export function App() {
   // Loading screen
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gradient-subtle">
+      <div className="flex flex-col items-center justify-center h-full bg-bg">
         {/* Logo */}
-        <div className="w-16 h-16 rounded-2xl gradient-hero flex items-center justify-center mb-5 animate-pulse-glow">
+        <div className="w-16 h-16 rounded-2xl gradient-hero flex items-center justify-center mb-5">
           <svg width="32" height="32" viewBox="0 0 40 40" fill="none">
             <path
               d="M20 4L34 12V28L20 36L6 28V12L20 4Z"

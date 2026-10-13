@@ -25,7 +25,7 @@ export function Button({
 
   const variants = {
     primary:
-      'bg-hive text-white hover:bg-hive-light active:bg-hive-dark disabled:bg-hive/30 disabled:text-white/50 btn-shine shadow-sm shadow-hive/20',
+      'bg-hive text-white hover:bg-hive-light active:bg-hive-dark disabled:bg-hive/30 disabled:text-white/50',
     secondary:
       'bg-surface-elevated text-text-primary border border-border hover:bg-surface-overlay hover:border-border-accent active:bg-surface disabled:opacity-40',
     ghost:
