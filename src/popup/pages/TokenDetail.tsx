@@ -26,6 +26,7 @@ import {
   type HEToken,
   type HEBalance,
 } from '@/core/hive-engine/api';
+import { fetchTokenPriceHistory, percentChange, type PricePoint } from '@/core/prices';
 
 type ActionType = 'transfer' | 'stake' | 'unstake' | 'delegate' | null;
 
@@ -46,7 +47,8 @@ export function TokenDetail() {
   } | null;
 
   const chartRef = useRef<SVGSVGElement>(null);
-  const [priceHistory, setPriceHistory] = useState<{ time: number; price: number }[]>([]);
+  const [priceHistory, setPriceHistory] = useState<PricePoint[]>([]);
+  const [historyStatus, setHistoryStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
   const [currentPrice, setCurrentPrice] = useState(tokenData?.price || 0);
 
   const [action, setAction] = useState<ActionType>(null);
@@ -70,26 +72,22 @@ export function TokenDetail() {
   }, [symbol]);
 
   async function loadPriceData() {
-    try {
-      const price = await getTokenPrice(symbol);
-      setCurrentPrice(price);
+    setHistoryStatus('loading');
+    const [price, history] = await Promise.all([
+      getTokenPrice(symbol).catch(() => tokenData?.price || 0),
+      fetchTokenPriceHistory(symbol, 30),
+    ]);
+    setCurrentPrice(price);
 
-      // Generate price history from current price (simulated until HE has historical API)
-      const now = Date.now();
-      const points: { time: number; price: number }[] = [];
-      let p = price;
-      let seed = 0;
-      for (let i = 0; i < symbol.length; i++) seed += symbol.charCodeAt(i);
-      const rand = () => { seed = (seed * 1664525 + 1013904223) & 0x7fffffff; return (seed / 0x7fffffff) * 2 - 1; };
-
-      for (let i = 96; i >= 0; i--) {
-        points.push({ time: now - i * 900_000, price: p });
-        p = Math.max(0.0000001, p * (1 + rand() * 0.015));
-      }
-      points[points.length - 1].price = price;
-      setPriceHistory(points);
-    } catch {
-      // ignore
+    if (history === null) {
+      setPriceHistory([]);
+      setHistoryStatus('error');
+    } else if (history.length < 2) {
+      setPriceHistory([]);
+      setHistoryStatus('empty');
+    } else {
+      setPriceHistory(history);
+      setHistoryStatus('ready');
     }
   }
 
@@ -118,7 +116,7 @@ export function TokenDetail() {
 
     const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
     const isUp = priceHistory[priceHistory.length - 1].price >= priceHistory[0].price;
-    const color = isUp ? '#5CEAA0' : '#EF476F';
+    const color = isUp ? 'var(--color-success)' : 'var(--color-error)';
 
     // Horizontal grid lines + Y-axis price labels
     const yTicks = yScale.ticks(4);
@@ -126,12 +124,12 @@ export function TokenDetail() {
       g.append('line')
         .attr('x1', 0).attr('x2', innerW)
         .attr('y1', yScale(tick)).attr('y2', yScale(tick))
-        .attr('stroke', 'rgba(255,255,255,0.04)')
+        .attr('stroke', 'var(--color-border)')
         .attr('stroke-dasharray', '3,3');
       g.append('text')
         .attr('x', innerW + 6)
         .attr('y', yScale(tick) + 3)
-        .attr('fill', '#7A6B8F')
+        .attr('fill', 'var(--color-text-tertiary)')
         .attr('font-size', '9')
         .attr('font-family', 'Source Sans 3, system-ui')
         .text(tick < 0.01 ? tick.toFixed(6) : tick < 1 ? tick.toFixed(4) : tick.toFixed(2));
@@ -145,16 +143,15 @@ export function TokenDetail() {
       timeExtent[0] + (timeExtent[1] - timeExtent[0]) * 0.66,
       timeExtent[1],
     ];
-    timeTicks.forEach((tick) => {
-      const d = new Date(tick);
-      const label = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+    timeTicks.forEach((tick, i) => {
+      const label = new Date(tick).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
       g.append('text')
         .attr('x', xScale(tick))
         .attr('y', innerH + 16)
-        .attr('fill', '#7A6B8F')
+        .attr('fill', 'var(--color-text-tertiary)')
+        .attr('text-anchor', i === 0 ? 'start' : i === timeTicks.length - 1 ? 'end' : 'middle')
         .attr('font-size', '9')
-        .attr('font-family', 'Source Sans 3, system-ui')
-        .attr('text-anchor', 'middle')
+        .attr('font-family', 'inherit')
         .text(label);
     });
 
@@ -178,7 +175,7 @@ export function TokenDetail() {
     // End dot
     const last = priceHistory[priceHistory.length - 1];
     g.append('circle').attr('cx', xScale(last.time)).attr('cy', yScale(last.price))
-      .attr('r', 3.5).attr('fill', color).attr('stroke', '#1A1128').attr('stroke-width', 2);
+      .attr('r', 3.5).attr('fill', color).attr('stroke', 'var(--color-surface-elevated)').attr('stroke-width', 2);
   }, [priceHistory]);
 
   const handleAction = async () => {
@@ -265,15 +262,28 @@ export function TokenDetail() {
           </div>
         </div>
 
-        {/* Price chart */}
-        {priceHistory.length > 0 && (
-          <Card variant="elevated" padding="sm">
-            <p className="text-[10px] font-semibold text-text-tertiary tracking-widest uppercase px-1 mb-1">
-              Price (HIVE) — 24h
+        {/* Price chart: 30 days of daily closes from the Hive Engine market */}
+        <Card variant="elevated" padding="sm">
+          <div className="flex items-center justify-between px-1 mb-1">
+            <p className="text-[10px] font-semibold text-text-tertiary tracking-widest uppercase">
+              Price in HIVE, 30 days
             </p>
+            {historyStatus === 'ready' && (
+              <span className={`text-[11px] font-bold ${percentChange(priceHistory) >= 0 ? 'text-success' : 'text-error'}`}>
+                {percentChange(priceHistory) >= 0 ? '+' : ''}{percentChange(priceHistory).toFixed(2)}%
+              </span>
+            )}
+          </div>
+          {historyStatus === 'ready' ? (
             <svg ref={chartRef} viewBox="0 0 352 160" className="w-full" preserveAspectRatio="xMidYMid meet" />
-          </Card>
-        )}
+          ) : historyStatus === 'loading' ? (
+            <div className="h-36 rounded-xl shimmer" />
+          ) : (
+            <p className="text-xs text-text-tertiary text-center py-10">
+              {historyStatus === 'empty' ? 'No market trades for this token yet' : 'Price history unavailable right now'}
+            </p>
+          )}
+        </Card>
 
         {/* Balances */}
         <div className="grid grid-cols-2 gap-2.5">
