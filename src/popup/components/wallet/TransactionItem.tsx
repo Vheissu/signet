@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import {
+  Lock,
   ArrowUpRight,
   ArrowDownLeft,
   Zap,
@@ -14,10 +16,13 @@ import {
 } from 'lucide-react';
 import type { TransactionRecord } from '@/core/types';
 import { timeAgo } from '@/core/hive/operations';
+import { isEncryptedMemo } from '@/core/crypto/hive-keys';
 
 interface TransactionItemProps {
   tx: TransactionRecord;
   currentUser: string;
+  /** Decrypt an encrypted memo. Should throw with a readable message on failure. */
+  onDecryptMemo?: (memo: string) => Promise<string>;
 }
 
 interface TxDisplay {
@@ -105,11 +110,27 @@ function getHiveHubUrl(tx: TransactionRecord): string | null {
   return `https://hub.peakd.com/tx/${tx.id}`;
 }
 
-export function TransactionItem({ tx, currentUser }: TransactionItemProps) {
+export function TransactionItem({ tx, currentUser, onDecryptMemo }: TransactionItemProps) {
   const display = getTxDisplay(tx, currentUser);
   const subtitle = getSubtitle(tx, currentUser);
   const Icon = display.icon;
   const hubUrl = getHiveHubUrl(tx);
+
+  const showMemo = (tx.type === 'transfer' || tx.type === 'he_transfer' || tx.type === 'transfer_to_savings' || tx.type === 'transfer_from_savings') && !!tx.memo;
+  const encrypted = showMemo && isEncryptedMemo(tx.memo);
+  const [decrypted, setDecrypted] = useState<string | null>(null);
+  const [decrypting, setDecrypting] = useState(false);
+
+  const handleDecrypt = async () => {
+    if (!onDecryptMemo || !tx.memo || decrypting) return;
+    setDecrypting(true);
+    try {
+      setDecrypted(await onDecryptMemo(tx.memo));
+    } catch {
+      // the caller reports the error
+    }
+    setDecrypting(false);
+  };
 
   const isPositive =
     (tx.type === 'transfer' && tx.to === currentUser && tx.from !== currentUser) ||
@@ -140,6 +161,30 @@ export function TransactionItem({ tx, currentUser }: TransactionItemProps) {
         <p className="text-[11px] text-text-tertiary truncate">
           {subtitle || timeAgo(tx.timestamp)}
         </p>
+        {showMemo && (
+          encrypted ? (
+            decrypted !== null ? (
+              <p className="text-[11px] text-text-secondary truncate" title={decrypted}>
+                <Lock size={9} className="inline mr-1 -mt-0.5 text-success" />
+                {decrypted}
+              </p>
+            ) : (
+              <button
+                type="button"
+                onClick={handleDecrypt}
+                disabled={!onDecryptMemo}
+                className="text-[11px] text-text-tertiary hover:text-hive inline-flex items-center gap-1 disabled:cursor-default"
+              >
+                <Lock size={9} />
+                {decrypting ? 'Decrypting…' : 'Encrypted memo'}
+              </button>
+            )
+          ) : (
+            <p className="text-[11px] text-text-tertiary truncate" title={tx.memo}>
+              {tx.memo}
+            </p>
+          )
+        )}
       </div>
 
       {/* Amount + time + link */}

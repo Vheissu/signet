@@ -16,7 +16,9 @@ export function Savings() {
   const activeAccountName = useStore((s) => s.activeAccountName);
   const addToast = useStore((s) => s.addToast);
   const goBack = useStore((s) => s.goBack);
-  const { balances, formatNumber, refreshAccountData } = useHive();
+  const { balances, formatNumber, refreshAccountData, globalProperties } = useHive();
+  const hbdApr = globalProperties ? (Number((globalProperties as any).hbd_interest_rate) || 0) / 100 : null;
+  const aprLabel = hbdApr === null ? '…' : `${hbdApr.toFixed(hbdApr % 1 === 0 ? 0 : 2)}%`;
   const { getDecryptedKey } = useAccounts();
 
   const [tab, setTab] = useState<SavingsTab>('deposit');
@@ -109,7 +111,7 @@ export function Savings() {
             <p className="text-base font-bold text-text-primary mt-0.5">
               {formatNumber(balances.savingsHbd, 3)}
             </p>
-            <Badge variant="success" className="mt-1">20% APR</Badge>
+            <Badge variant="success" className="mt-1">{aprLabel} APR</Badge>
           </Card>
         </div>
 
@@ -158,8 +160,9 @@ export function Savings() {
         {tab === 'deposit' && currency === 'HBD' && (
           <Card variant="outline" padding="sm">
             <p className="text-xs text-text-secondary leading-relaxed">
-              HBD in savings earns <strong className="text-success">20% APR</strong> interest,
-              paid monthly by the blockchain.
+              HBD in savings earns <strong className="text-success">{aprLabel} APR</strong> interest,
+              set by witnesses and paid by the blockchain. It compounds each time you deposit or withdraw,
+              or at least every 30 days.
             </p>
           </Card>
         )}

@@ -6,6 +6,7 @@ import { TransactionItem } from '@/popup/components/wallet/TransactionItem';
 import { Spinner } from '@/popup/components/ui/Spinner';
 import { useStore } from '@/popup/store';
 import { getAccountHistory } from '@/core/hive/client';
+import { decodeMemo } from '@/core/crypto/hive-keys';
 import type { TransactionRecord } from '@/core/types';
 
 const FILTERS: { key: string; label: string; types: string[] }[] = [
@@ -23,7 +24,24 @@ const FILTERS: { key: string; label: string; types: string[] }[] = [
 
 export function History() {
   const activeAccountName = useStore((s) => s.activeAccountName);
+  const getDecryptedKey = useStore((s) => s.getDecryptedKey);
+  const addToast = useStore((s) => s.addToast);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
+
+  const decryptMemo = async (memo: string): Promise<string> => {
+    if (!activeAccountName) throw new Error('No account');
+    const memoKey = await getDecryptedKey(activeAccountName, 'memo');
+    if (!memoKey) {
+      addToast('Add your memo key in Settings to read encrypted memos', 'error');
+      throw new Error('No memo key');
+    }
+    try {
+      return decodeMemo(memo, memoKey);
+    } catch {
+      addToast('This memo was not encrypted for your memo key', 'error');
+      throw new Error('Cannot decrypt');
+    }
+  };
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -129,6 +147,7 @@ export function History() {
                   key={`${tx.id}-${tx.type}-${i}`}
                   tx={tx}
                   currentUser={activeAccountName || ''}
+                  onDecryptMemo={decryptMemo}
                 />
               ))}
             </div>

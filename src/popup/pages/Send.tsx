@@ -12,6 +12,7 @@ import { broadcastTransfer } from '@/core/hive/client';
 import { getAccount } from '@/core/hive/client';
 import { scanQRFromImage, parseTransferUri } from '@/core/qr';
 import { getContacts, recordTransaction, type Contact } from '@/core/contacts';
+import { encodeMemo, isEncryptedMemo } from '@/core/crypto/hive-keys';
 
 export function Send() {
   const activeAccountName = useStore((s) => s.activeAccountName);
@@ -85,7 +86,24 @@ export function Send() {
       const clean = recipient.replace('@', '').trim().toLowerCase();
       const amountStr = `${parseFloat(amount).toFixed(3)} ${currency}`;
 
-      await broadcastTransfer(activeAccountName, clean, amountStr, memo, activeKey);
+      let finalMemo = memo;
+      if (isEncryptedMemo(memo)) {
+        const memoKey = await getDecryptedKey('memo');
+        if (!memoKey) {
+          addToast('Encrypted memos need your memo key. Add it in Settings.', 'error');
+          setIsSending(false);
+          return;
+        }
+        const recipientAccount = await getAccount(clean);
+        if (!recipientAccount) {
+          addToast('Recipient account not found', 'error');
+          setIsSending(false);
+          return;
+        }
+        finalMemo = encodeMemo(memo, memoKey, recipientAccount.memo_key);
+      }
+
+      await broadcastTransfer(activeAccountName, clean, amountStr, finalMemo, activeKey);
 
       // Auto-save as contact
       await recordTransaction(clean);
@@ -232,8 +250,12 @@ export function Send() {
           label="Memo (Optional)"
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
-          placeholder="Add a memo"
-          hint={memo.startsWith('#') ? 'This memo will be encrypted' : undefined}
+          placeholder="Add a memo (start with # to encrypt)"
+          hint={
+            isEncryptedMemo(memo)
+              ? 'Encrypted with your memo key. Only you and the recipient can read it.'
+              : 'Memos are public on the blockchain unless they start with #'
+          }
         />
 
         {/* Confirm section */}
@@ -276,7 +298,7 @@ export function Send() {
                     <div className="flex justify-between text-sm">
                       <span className="text-text-secondary">Memo</span>
                       <span className="text-text-primary font-medium truncate max-w-[180px]">
-                        {memo}
+                        {isEncryptedMemo(memo) ? `🔒 ${memo.slice(1)}` : memo}
                       </span>
                     </div>
                   </>

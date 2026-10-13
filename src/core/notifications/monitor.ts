@@ -9,7 +9,7 @@
  * - Delegation changes
  */
 
-import { getAccount, getAccountHistory } from '@/core/hive/client';
+import { getAccount, getAccountHistory, getDynamicGlobalProperties } from '@/core/hive/client';
 import { parseAmount, hasPendingRewards } from '@/core/hive/operations';
 
 export interface Notification {
@@ -116,8 +116,10 @@ export async function checkForNewActivity(username: string): Promise<Notificatio
       if (rewardHive > 0) parts.push(`${rewardHive.toFixed(3)} HIVE`);
       if (rewardHbd > 0) parts.push(`${rewardHbd.toFixed(3)} HBD`);
 
+      // One notification per distinct reward balance, so a growing balance
+      // re-notifies but an unchanged one does not.
       newNotifications.push({
-        id: `reward_${now}`,
+        id: `reward_${rewardHive.toFixed(3)}_${rewardHbd.toFixed(3)}`,
         type: 'reward_available',
         title: 'Rewards Available',
         message: `Claim ${parts.join(' + ')}`,
@@ -134,7 +136,7 @@ export async function checkForNewActivity(username: string): Promise<Notificatio
     if (nextPowerDown > now && nextPowerDown < now + 7 * 86400 * 1000) {
       const daysUntil = Math.ceil((nextPowerDown - now) / 86400000);
       newNotifications.push({
-        id: `powerdown_${now}`,
+        id: `powerdown_${nextPowerDown}`,
         type: 'power_down',
         title: 'Power Down Payment',
         message: `Next payment in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`,
@@ -144,15 +146,26 @@ export async function checkForNewActivity(username: string): Promise<Notificatio
       });
     }
 
-    // Check for HBD savings interest (20% APR reminder)
+    // Monthly reminder that HBD savings are earning interest (rate from chain)
     const savingsHbd = parseAmount(account.savings_hbd_balance as any || '0 HBD').amount;
     if (savingsHbd > 0) {
-      const monthlyInterest = (savingsHbd * 0.20) / 12;
+      let apr = 0;
+      try {
+        const props: any = await getDynamicGlobalProperties();
+        apr = (Number(props.hbd_interest_rate) || 0) / 10000;
+      } catch {
+        // leave at 0, message below still makes sense
+      }
+      const monthlyInterest = (savingsHbd * apr) / 12;
+      const month = new Date(now).toISOString().slice(0, 7);
       newNotifications.push({
-        id: `savings_${now}`,
+        id: `savings_${month}`,
         type: 'savings_interest',
         title: 'Savings Earning Interest',
-        message: `${savingsHbd.toFixed(3)} HBD earning ~${monthlyInterest.toFixed(3)} HBD/month`,
+        message:
+          apr > 0
+            ? `${savingsHbd.toFixed(3)} HBD earning ~${monthlyInterest.toFixed(3)} HBD/month at ${(apr * 100).toFixed(1)}%`
+            : `${savingsHbd.toFixed(3)} HBD in savings`,
         timestamp: now,
         read: false,
         actionPage: 'savings',

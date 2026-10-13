@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowDownUp } from 'lucide-react';
 import { Header } from '@/popup/components/layout/Header';
 import { BottomNav } from '@/popup/components/layout/BottomNav';
@@ -8,19 +8,41 @@ import { Card } from '@/popup/components/ui/Card';
 import { useStore } from '@/popup/store';
 import { useHive } from '@/popup/hooks/useHive';
 import { useAccounts } from '@/popup/hooks/useAccounts';
-import { broadcastConvert, broadcastCollateralizedConvert } from '@/core/hive/client';
+import { broadcastConvert, broadcastCollateralizedConvert, getCurrentMedianHistoryPrice } from '@/core/hive/client';
+import { parseAmount } from '@/core/hive/operations';
 
 type ConversionType = 'hiveToHbd' | 'hbdToHive';
 
 export function Swap() {
   const activeAccountName = useStore((s) => s.activeAccountName);
   const addToast = useStore((s) => s.addToast);
-  const { balances, formatNumber, hivePriceUsd, refreshAccountData } = useHive();
+  const { balances, formatNumber, refreshAccountData } = useHive();
   const { getDecryptedKey } = useAccounts();
 
   const [convType, setConvType] = useState<ConversionType>('hiveToHbd');
   const [amount, setAmount] = useState('');
   const [isSwapping, setIsSwapping] = useState(false);
+  // HBD per HIVE according to the witness median feed, which is what the
+  // chain uses to settle conversions.
+  const [medianPrice, setMedianPrice] = useState<number | null>(null);
+
+  useEffect(() => {
+    getCurrentMedianHistoryPrice()
+      .then((price) => {
+        const base = parseAmount(price.base as any).amount;
+        const quote = parseAmount(price.quote as any).amount;
+        if (quote > 0) setMedianPrice(base / quote);
+      })
+      .catch(() => setMedianPrice(null));
+  }, []);
+
+  const numericAmount = parseFloat(amount) || 0;
+  const estimate =
+    medianPrice === null || numericAmount <= 0
+      ? null
+      : convType === 'hbdToHive'
+        ? numericAmount / medianPrice
+        : (numericAmount * medianPrice * 0.95) / 2;
 
   const fromCurrency = convType === 'hiveToHbd' ? 'HIVE' : 'HBD';
   const toCurrency = convType === 'hiveToHbd' ? 'HBD' : 'HIVE';
@@ -114,7 +136,12 @@ export function Swap() {
           {/* To */}
           <Card variant="elevated" padding="md">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-text-secondary">To</span>
+              <span className="text-xs text-text-secondary">To (estimate)</span>
+              {medianPrice !== null && (
+                <span className="text-[11px] text-text-tertiary">
+                  Feed: 1 HIVE = {medianPrice.toFixed(3)} HBD
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold ${
@@ -123,7 +150,7 @@ export function Swap() {
                 {toCurrency === 'HIVE' ? 'H' : '$'}
               </div>
               <span className="text-xl font-bold text-text-tertiary">
-                {amount ? `~${parseFloat(amount).toFixed(3)}` : '0.000'}
+                {estimate !== null ? `~${estimate.toFixed(3)}` : '0.000'}
               </span>
               <span className="text-sm font-medium text-text-secondary ml-auto">
                 {toCurrency}
@@ -136,13 +163,15 @@ export function Swap() {
             <p className="text-xs text-text-secondary leading-relaxed">
               {convType === 'hbdToHive' ? (
                 <>
-                  HBD to HIVE conversion takes <strong className="text-text-primary">3.5 days</strong>.
-                  You'll receive HIVE based on the median price at conversion time.
+                  HBD to HIVE settles after <strong className="text-text-primary">3.5 days</strong> at the
+                  median feed price then, so the final amount can differ from the estimate.
                 </>
               ) : (
                 <>
-                  HIVE to HBD uses collateralized conversion (<strong className="text-text-primary">3.5 days</strong>).
-                  HIVE is used as collateral and you receive HBD.
+                  Your HIVE is locked as collateral and you receive roughly half its value in HBD
+                  <strong className="text-text-primary"> immediately</strong>, less a 5% fee. After{' '}
+                  <strong className="text-text-primary">3.5 days</strong> the conversion settles and the
+                  unused collateral comes back.
                 </>
               )}
             </p>
