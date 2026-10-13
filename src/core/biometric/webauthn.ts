@@ -5,13 +5,14 @@
  * for unlocking the wallet. The flow:
  *
  * 1. ENROLLMENT: After a successful password unlock, create a WebAuthn
- *    credential. Encrypt the wallet password with a key derived from
- *    a random secret, and store the secret + encrypted password in
- *    chrome.storage.local.
+ *    credential. Derive an AES key from the authenticator via the
+ *    WebAuthn PRF extension, encrypt the wallet password, and store
+ *    only non-secret credential metadata plus the encrypted password
+ *    in chrome.storage.local.
  *
  * 2. UNLOCK: Call navigator.credentials.get() which triggers the
- *    biometric prompt. On success, use the stored secret to decrypt
- *    the wallet password and unlock normally.
+ *    biometric prompt. On success, derive the same AES key from the
+ *    authenticator again and use it to decrypt the wallet password.
  *
  * The actual private key material from WebAuthn never leaves the
  * authenticator. We use the credential as proof that the user is
@@ -20,20 +21,123 @@
 
 const CREDENTIAL_STORAGE_KEY = 'biometric_credential';
 const ENCRYPTED_PW_KEY = 'biometric_encrypted_pw';
-const RP_ID = 'signet-wallet';
 const RP_NAME = 'Signet Wallet';
+const BIOMETRIC_VERSION = 2;
+const PRF_SALT_LENGTH = 32;
+
+interface StoredBiometricCredential {
+  version: number;
+  id: string;
+  rawId: string;
+  salt: string;
+}
+
+export interface BiometricSupport {
+  available: boolean;
+  hasPlatformAuthenticator: boolean;
+  hasPrfSupport: boolean;
+  reason?: 'unsupported-browser' | 'no-platform-authenticator' | 'no-prf-support';
+}
+
+interface PRFOutputs {
+  enabled?: boolean;
+  results?: {
+    first?: BufferSource;
+    second?: BufferSource;
+  };
+}
+
+type ExtensionResultsWithPRF = AuthenticationExtensionsClientOutputs & {
+  prf?: PRFOutputs;
+};
+
+type PublicKeyCredentialWithCapabilities = typeof PublicKeyCredential & {
+  getClientCapabilities?: () => Promise<Record<string, boolean>>;
+};
+
+function isStoredBiometricCredential(value: unknown): value is StoredBiometricCredential {
+  if (!value || typeof value !== 'object') return false;
+
+  const record = value as Record<string, unknown>;
+  return (
+    record.version === BIOMETRIC_VERSION &&
+    typeof record.id === 'string' &&
+    typeof record.rawId === 'string' &&
+    typeof record.salt === 'string'
+  );
+}
 
 /**
- * Check if WebAuthn / platform authenticator is available.
+ * Check if the current browser can support biometric unlock securely.
+ *
+ * A supported platform authenticator is not sufficient on its own: we also
+ * require WebAuthn PRF support so the decrypting key does not need to be
+ * stored in extension storage.
  */
-export async function isBiometricAvailable(): Promise<boolean> {
+export async function getBiometricSupport(): Promise<BiometricSupport> {
   try {
-    if (!window.PublicKeyCredential) return false;
-    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-    return available;
+    if (!window.PublicKeyCredential) {
+      return {
+        available: false,
+        hasPlatformAuthenticator: false,
+        hasPrfSupport: false,
+        reason: 'unsupported-browser',
+      };
+    }
+
+    const hasPlatformAuthenticator =
+      await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+
+    if (!hasPlatformAuthenticator) {
+      return {
+        available: false,
+        hasPlatformAuthenticator: false,
+        hasPrfSupport: false,
+        reason: 'no-platform-authenticator',
+      };
+    }
+
+    const getClientCapabilities =
+      (PublicKeyCredential as PublicKeyCredentialWithCapabilities).getClientCapabilities;
+    if (!getClientCapabilities) {
+      return {
+        available: false,
+        hasPlatformAuthenticator: true,
+        hasPrfSupport: false,
+        reason: 'unsupported-browser',
+      };
+    }
+
+    const capabilities = await getClientCapabilities.call(PublicKeyCredential);
+    const hasPrfSupport = capabilities['extension:prf'] === true;
+
+    if (!hasPrfSupport) {
+      return {
+        available: false,
+        hasPlatformAuthenticator: true,
+        hasPrfSupport: false,
+        reason: 'no-prf-support',
+      };
+    }
+
+    return {
+      available: true,
+      hasPlatformAuthenticator: true,
+      hasPrfSupport: true,
+    };
   } catch {
-    return false;
+    return {
+      available: false,
+      hasPlatformAuthenticator: false,
+      hasPrfSupport: false,
+      reason: 'unsupported-browser',
+    };
   }
+}
+
+export async function isBiometricAvailable(): Promise<boolean> {
+  const support = await getBiometricSupport();
+  return support.available;
 }
 
 /**
@@ -43,7 +147,7 @@ export async function isBiometricEnrolled(): Promise<boolean> {
   try {
     if (typeof chrome !== 'undefined' && chrome?.storage) {
       const result = await chrome.storage.local.get([CREDENTIAL_STORAGE_KEY, ENCRYPTED_PW_KEY]);
-      return !!(result[CREDENTIAL_STORAGE_KEY] && result[ENCRYPTED_PW_KEY]);
+      return isStoredBiometricCredential(result[CREDENTIAL_STORAGE_KEY]) && !!result[ENCRYPTED_PW_KEY];
     }
     return false;
   } catch {
@@ -58,11 +162,16 @@ function encode(str: string): Uint8Array {
   return new TextEncoder().encode(str);
 }
 
+function toArrayBuffer(buffer: ArrayBuffer | ArrayBufferView): ArrayBuffer {
+  if (buffer instanceof ArrayBuffer) return buffer;
+  return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength).slice().buffer;
+}
+
 /**
  * Convert ArrayBuffer to base64 string.
  */
-function bufToBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
+function bufToBase64(buf: ArrayBuffer | ArrayBufferView): string {
+  const bytes = new Uint8Array(toArrayBuffer(buf));
   let binary = '';
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
@@ -79,47 +188,43 @@ function base64ToBuf(b64: string): Uint8Array {
 }
 
 /**
- * Encrypt the password with a random key for biometric storage.
+ * Import a PRF output as the AES key used to wrap the wallet password.
  */
-async function encryptForBiometric(
-  password: string,
-  secret: Uint8Array
-): Promise<string> {
-  const key = await crypto.subtle.importKey(
+async function importBiometricKey(prfOutput: Uint8Array): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
     'raw',
-    secret as unknown as BufferSource,
+    prfOutput as unknown as BufferSource,
     'AES-GCM',
     false,
-    ['encrypt']
+    ['encrypt', 'decrypt']
   );
+}
+
+/**
+ * Encrypt the password with the authenticator-derived key.
+ */
+async function encryptForBiometric(password: string, key: CryptoKey): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encrypted = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv: iv as unknown as BufferSource },
     key,
     encode(password) as unknown as BufferSource
   );
-  // Store as iv:ciphertext in base64
-  return bufToBase64(iv.buffer as ArrayBuffer) + ':' + bufToBase64(encrypted);
+  return bufToBase64(iv) + ':' + bufToBase64(encrypted);
 }
 
 /**
  * Decrypt the password stored for biometric unlock.
  */
-async function decryptForBiometric(
-  encryptedStr: string,
-  secret: Uint8Array
-): Promise<string> {
+async function decryptForBiometric(encryptedStr: string, key: CryptoKey): Promise<string> {
   const [ivB64, ctB64] = encryptedStr.split(':');
+  if (!ivB64 || !ctB64) {
+    throw new Error('Invalid biometric payload');
+  }
+
   const iv = base64ToBuf(ivB64);
   const ct = base64ToBuf(ctB64);
 
-  const key = await crypto.subtle.importKey(
-    'raw',
-    secret as unknown as BufferSource,
-    'AES-GCM',
-    false,
-    ['decrypt']
-  );
   const decrypted = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: iv as unknown as BufferSource },
     key,
@@ -128,14 +233,84 @@ async function decryptForBiometric(
   return new TextDecoder().decode(decrypted);
 }
 
+function getPRFFirstResult(credential: PublicKeyCredential): Uint8Array | null {
+  const extResults = credential.getClientExtensionResults() as ExtensionResultsWithPRF;
+  const first = extResults.prf?.results?.first;
+
+  if (!first) return null;
+  return new Uint8Array(toArrayBuffer(first));
+}
+
+async function deriveBiometricKeyFromCredential(
+  rawId: string,
+  salt: Uint8Array
+): Promise<CryptoKey | null> {
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const assertion = await navigator.credentials.get({
+    publicKey: {
+      challenge: challenge as unknown as BufferSource,
+      allowCredentials: [
+        {
+          id: base64ToBuf(rawId) as unknown as BufferSource,
+          type: 'public-key',
+          transports: ['internal'],
+        },
+      ],
+      userVerification: 'required',
+      timeout: 60000,
+      extensions: {
+        prf: {
+          eval: { first: salt },
+        },
+      } as AuthenticationExtensionsClientInputs,
+    },
+  }) as PublicKeyCredential | null;
+
+  if (!assertion) return null;
+
+  const prfOutput = getPRFFirstResult(assertion);
+  if (!prfOutput) return null;
+
+  return importBiometricKey(prfOutput);
+}
+
+/**
+ * Derive a wrapping key for the newly-created credential.
+ *
+ * Some authenticators do not expose PRF output during `create()`, so we
+ * immediately perform a `get()` with the fresh credential as a fallback.
+ */
+async function deriveEnrollmentKey(
+  credential: PublicKeyCredential,
+  salt: Uint8Array
+): Promise<CryptoKey | null> {
+  const createOutput = getPRFFirstResult(credential);
+  if (createOutput) {
+    return importBiometricKey(createOutput);
+  }
+
+  return deriveBiometricKeyFromCredential(bufToBase64(credential.rawId), salt);
+}
+
+/**
+ * Build the metadata persisted for biometric unlock.
+ */
+function buildStoredCredential(credential: PublicKeyCredential, salt: Uint8Array): StoredBiometricCredential {
+  return {
+    version: BIOMETRIC_VERSION,
+    id: credential.id,
+    rawId: bufToBase64(credential.rawId),
+    salt: bufToBase64(salt),
+  };
+}
+
 /**
  * Enroll biometric authentication.
  * Call this after a successful password unlock.
  */
 export async function enrollBiometric(password: string): Promise<boolean> {
   try {
-    // Generate a random 256-bit secret for encrypting the password
-    const secret = crypto.getRandomValues(new Uint8Array(32));
+    const salt = crypto.getRandomValues(new Uint8Array(PRF_SALT_LENGTH));
 
     // Create a WebAuthn credential (triggers Touch ID / Windows Hello)
     const challenge = crypto.getRandomValues(new Uint8Array(32));
@@ -160,20 +335,21 @@ export async function enrollBiometric(password: string): Promise<boolean> {
           residentKey: 'preferred',
         },
         timeout: 60000,
+        extensions: {
+          prf: {
+            eval: { first: salt },
+          },
+        } as AuthenticationExtensionsClientInputs,
       },
-    }) as PublicKeyCredential;
+    }) as PublicKeyCredential | null;
 
     if (!credential) return false;
 
-    // Encrypt the password with our secret
-    const encryptedPassword = await encryptForBiometric(password, secret);
+    const key = await deriveEnrollmentKey(credential, salt);
+    if (!key) return false;
 
-    // Store everything needed for future authentication
-    const credentialData = {
-      id: credential.id,
-      rawId: bufToBase64(credential.rawId as ArrayBuffer),
-      secret: bufToBase64(secret.buffer as ArrayBuffer),
-    };
+    const encryptedPassword = await encryptForBiometric(password, key);
+    const credentialData = buildStoredCredential(credential, salt);
 
     await chrome.storage.local.set({
       [CREDENTIAL_STORAGE_KEY]: credentialData,
@@ -192,37 +368,16 @@ export async function enrollBiometric(password: string): Promise<boolean> {
  */
 export async function authenticateWithBiometric(): Promise<string | null> {
   try {
-    // Load stored credential data
     const result = await chrome.storage.local.get([CREDENTIAL_STORAGE_KEY, ENCRYPTED_PW_KEY]);
     const credData = result[CREDENTIAL_STORAGE_KEY];
     const encryptedPw = result[ENCRYPTED_PW_KEY];
 
-    if (!credData || !encryptedPw) return null;
+    if (!isStoredBiometricCredential(credData) || !encryptedPw) return null;
 
-    // Trigger the biometric prompt
-    const challenge = crypto.getRandomValues(new Uint8Array(32));
-    const assertion = await navigator.credentials.get({
-      publicKey: {
-        challenge: challenge as unknown as BufferSource,
-        allowCredentials: [
-          {
-            id: base64ToBuf(credData.rawId) as unknown as BufferSource,
-            type: 'public-key',
-            transports: ['internal'],
-          },
-        ],
-        userVerification: 'required',
-        timeout: 60000,
-      },
-    }) as PublicKeyCredential;
+    const key = await deriveBiometricKeyFromCredential(credData.rawId, base64ToBuf(credData.salt));
+    if (!key) return null;
 
-    if (!assertion) return null;
-
-    // Biometric succeeded — decrypt the password
-    const secret = base64ToBuf(credData.secret);
-    const password = await decryptForBiometric(encryptedPw, secret);
-
-    return password;
+    return decryptForBiometric(encryptedPw, key);
   } catch (err) {
     console.error('[Signet] Biometric authentication failed:', err);
     return null;
