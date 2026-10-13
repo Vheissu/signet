@@ -10,7 +10,17 @@ import {
   Server,
   Fingerprint,
   Users,
+  Activity,
 } from 'lucide-react';
+import { testAllNodes, type RPCNode } from '@/core/hive/rpc';
+
+const APP_VERSION: string = (() => {
+  try {
+    return chrome.runtime.getManifest().version;
+  } catch {
+    return 'dev';
+  }
+})();
 import { PageContainer } from '@/popup/components/layout/PageContainer';
 import { Card } from '@/popup/components/ui/Card';
 import { Button } from '@/popup/components/ui/Button';
@@ -43,6 +53,19 @@ export function Settings() {
   const [showAccountsModal, setShowAccountsModal] = useState(false);
   const [newRpc, setNewRpc] = useState('');
   const [lockMinutes, setLockMinutes] = useState(String(settings.autoLockMinutes));
+  const [nodeHealth, setNodeHealth] = useState<Record<string, RPCNode>>({});
+  const [testingNodes, setTestingNodes] = useState(false);
+
+  const handleTestNodes = async () => {
+    setTestingNodes(true);
+    try {
+      const results = await testAllNodes(settings.rpcNodes);
+      setNodeHealth(Object.fromEntries(results.map((r) => [r.url, r])));
+    } catch {
+      addToast('Could not test nodes', 'error');
+    }
+    setTestingNodes(false);
+  };
 
   // Biometric state
   const [bioAvailable, setBioAvailable] = useState(false);
@@ -102,9 +125,16 @@ export function Settings() {
   };
 
   const handleAddRpc = () => {
-    if (!newRpc.startsWith('http')) return;
-    const nodes = [...settings.rpcNodes, newRpc];
-    updateSettings({ rpcNodes: nodes });
+    const url = newRpc.trim().replace(/\/+$/, '');
+    if (!/^https?:\/\/[^\s/]+/.test(url)) {
+      addToast('Enter a full URL, e.g. https://api.hive.blog', 'error');
+      return;
+    }
+    if (settings.rpcNodes.includes(url)) {
+      addToast('That node is already in the list', 'info');
+      return;
+    }
+    updateSettings({ rpcNodes: [...settings.rpcNodes, url] });
     setNewRpc('');
     addToast('RPC node added', 'success');
   };
@@ -114,7 +144,7 @@ export function Settings() {
     if (nodes.length === 0) return;
     updateSettings({
       rpcNodes: nodes,
-      activeRpc: nodes[0],
+      activeRpc: settings.activeRpc === url ? nodes[0] : settings.activeRpc,
     });
     addToast('RPC node removed', 'info');
   };
@@ -237,14 +267,22 @@ export function Settings() {
 
         {/* Version */}
         <p className="text-center text-xs text-text-tertiary pt-2 pb-4">
-          Signet v0.1.0
+          Signet v{APP_VERSION}
         </p>
       </div>
 
       {/* RPC Modal */}
       <Modal isOpen={showRpcModal} onClose={() => setShowRpcModal(false)} title="RPC Nodes">
         <div className="space-y-3">
-          {settings.rpcNodes.map((node) => (
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-text-tertiary">Tap a node to make it primary. Others are fallbacks.</p>
+            <Button variant="ghost" size="sm" onClick={handleTestNodes} loading={testingNodes} icon={<Activity size={12} />}>
+              Test
+            </Button>
+          </div>
+          {settings.rpcNodes.map((node) => {
+            const health = nodeHealth[node];
+            return (
             <div
               key={node}
               className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
@@ -259,6 +297,11 @@ export function Settings() {
               >
                 {node.replace('https://', '')}
               </button>
+              {health && (
+                <span className={`text-[10px] font-semibold ml-2 ${health.isHealthy ? 'text-success' : 'text-error'}`}>
+                  {health.isHealthy ? `${health.latency} ms` : 'down'}
+                </span>
+              )}
               {settings.rpcNodes.length > 1 && (
                 <button
                   onClick={() => handleRemoveRpc(node)}
@@ -268,7 +311,8 @@ export function Settings() {
                 </button>
               )}
             </div>
-          ))}
+            );
+          })}
 
           <div className="flex gap-2">
             <Input

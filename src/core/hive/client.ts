@@ -70,8 +70,25 @@ const ALLOWED_OPS = new Set([
   'curation_reward',
   'author_reward',
   'producer_reward',
+  'comment_benefactor_reward',
+  'interest',
+  'fill_vesting_withdraw',
+  'fill_transfer_from_savings',
+  'fill_recurrent_transfer',
+  'recurrent_transfer',
+  'return_vesting_delegation',
+  'proposal_pay',
+  'fill_collateralized_convert_request',
   'custom_json', // parsed into HE ops below
 ]);
+
+export interface HistoryPage {
+  records: TransactionRecord[];
+  /** Raw history index of the oldest operation fetched; -1 when empty. */
+  oldestIndex: number;
+  /** True when older operations exist beyond this page. */
+  hasMore: boolean;
+}
 
 // Map Hive Engine contract actions to human-readable types
 function parseHiveEngineOp(data: any): {
@@ -116,13 +133,41 @@ function parseHiveEngineOp(data: any): {
   }
 }
 
+/**
+ * Fetch one page of financial history, newest first.
+ * `start` is the raw history index to start from (-1 = latest). The chain
+ * requires start >= limit - 1, so the limit is clamped near the beginning.
+ */
+export async function getAccountHistoryPage(
+  username: string,
+  start: number = -1,
+  limit: number = 200
+): Promise<HistoryPage> {
+  const effectiveLimit = start === -1 ? limit : Math.max(1, Math.min(limit, start + 1));
+  const history = await getClient().database.getAccountHistory(username, start, effectiveLimit);
+
+  let oldestIndex = -1;
+  for (const [index] of history as any[]) {
+    if (oldestIndex === -1 || index < oldestIndex) oldestIndex = index;
+  }
+
+  return {
+    records: mapHistory(history as any[]),
+    oldestIndex,
+    hasMore: oldestIndex > 0,
+  };
+}
+
 export async function getAccountHistory(
   username: string,
   start: number = -1,
   limit: number = 100
 ): Promise<TransactionRecord[]> {
-  const history = await getClient().database.getAccountHistory(username, start, limit);
+  const page = await getAccountHistoryPage(username, start, limit);
+  return page.records;
+}
 
+function mapHistory(history: any[]): TransactionRecord[] {
   return history
     .map(([, op]: any) => {
       const [type, data] = op.op;
@@ -200,6 +245,46 @@ export async function getAccountHistory(
         case 'fill_order':
           from = data.current_owner;
           amount = data.current_pays;
+          break;
+        case 'comment_benefactor_reward':
+          from = data.benefactor;
+          amount = [data.hive_payout, data.hbd_payout, data.vesting_payout]
+            .filter((a: string) => a && !a.startsWith('0.000'))
+            .join(' + ');
+          memo = data.permlink;
+          break;
+        case 'interest':
+          from = data.owner;
+          amount = data.interest;
+          break;
+        case 'fill_vesting_withdraw':
+          from = data.from_account; to = data.to_account;
+          amount = data.deposited;
+          break;
+        case 'fill_transfer_from_savings':
+          from = data.from; to = data.to;
+          amount = data.amount; memo = data.memo || '';
+          break;
+        case 'recurrent_transfer':
+          from = data.from; to = data.to;
+          amount = data.amount; memo = data.memo || '';
+          break;
+        case 'fill_recurrent_transfer':
+          from = data.from; to = data.to;
+          amount = data.amount; memo = data.memo || '';
+          break;
+        case 'return_vesting_delegation':
+          from = data.account;
+          amount = data.vesting_shares;
+          break;
+        case 'proposal_pay':
+          from = data.payer || 'hive.fund'; to = data.receiver;
+          amount = data.payment;
+          break;
+        case 'fill_collateralized_convert_request':
+          from = data.owner;
+          amount = data.amount_out;
+          memo = data.excess_collateral ? `${data.excess_collateral} collateral returned` : '';
           break;
         default:
           // Skip anything we don't explicitly handle

@@ -64,6 +64,26 @@ function getTxDisplay(tx: TransactionRecord, currentUser: string): TxDisplay {
       return { icon: RefreshCw, label: 'Conversion', color: 'text-text-secondary', iconBg: 'bg-surface-overlay' };
     case 'fill_order':
       return { icon: ShoppingCart, label: 'Order Filled', color: 'text-text-secondary', iconBg: 'bg-surface-overlay' };
+    case 'comment_benefactor_reward':
+      return { icon: Award, label: 'Benefactor Reward', color: 'text-success', iconBg: 'bg-success/12' };
+    case 'interest':
+      return { icon: PiggyBank, label: 'Savings Interest', color: 'text-success', iconBg: 'bg-success/12' };
+    case 'fill_vesting_withdraw':
+      return { icon: Zap, label: 'Power Down Payment', color: 'text-coral', iconBg: 'bg-coral/12' };
+    case 'fill_transfer_from_savings':
+      return { icon: PiggyBank, label: 'Savings Withdrawn', color: 'text-info', iconBg: 'bg-info/12' };
+    case 'recurrent_transfer':
+      return { icon: RefreshCw, label: 'Recurring Transfer Set', color: 'text-hive', iconBg: 'bg-hive/12' };
+    case 'fill_recurrent_transfer':
+      return isIncoming
+        ? { icon: ArrowDownLeft, label: 'Recurring Received', color: 'text-success', iconBg: 'bg-success/12' }
+        : { icon: ArrowUpRight, label: 'Recurring Sent', color: 'text-hive', iconBg: 'bg-hive/12' };
+    case 'return_vesting_delegation':
+      return { icon: Users, label: 'Delegation Returned', color: 'text-info', iconBg: 'bg-info/12' };
+    case 'proposal_pay':
+      return { icon: Award, label: 'Proposal Payment', color: 'text-success', iconBg: 'bg-success/12' };
+    case 'fill_collateralized_convert_request':
+      return { icon: RefreshCw, label: 'Conversion Settled', color: 'text-text-secondary', iconBg: 'bg-surface-overlay' };
     case 'he_transfer':
       return isIncoming
         ? { icon: ArrowDownLeft, label: 'Token Received', color: 'text-success', iconBg: 'bg-success/12' }
@@ -139,11 +159,17 @@ export function TransactionItem({ tx, currentUser, onDecryptMemo }: TransactionI
     tx.type === 'curation_reward' ||
     tx.type === 'author_reward' ||
     tx.type === 'producer_reward' ||
+    tx.type === 'comment_benefactor_reward' ||
+    tx.type === 'interest' ||
+    tx.type === 'fill_vesting_withdraw' ||
+    tx.type === 'proposal_pay' ||
+    (tx.type === 'fill_recurrent_transfer' && tx.to === currentUser && tx.from !== currentUser) ||
     tx.type === 'he_market_buy';
 
   const isNegative =
     (tx.type === 'transfer' && tx.from === currentUser && tx.to !== currentUser) ||
     (tx.type === 'he_transfer' && tx.from === currentUser) ||
+    (tx.type === 'fill_recurrent_transfer' && tx.from === currentUser && tx.to !== currentUser) ||
     tx.type === 'he_market_sell';
 
   return (

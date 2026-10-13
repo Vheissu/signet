@@ -5,21 +5,23 @@ import { BottomNav } from '@/popup/components/layout/BottomNav';
 import { TransactionItem } from '@/popup/components/wallet/TransactionItem';
 import { Spinner } from '@/popup/components/ui/Spinner';
 import { useStore } from '@/popup/store';
-import { getAccountHistory } from '@/core/hive/client';
+import { getAccountHistoryPage } from '@/core/hive/client';
+import { Button } from '@/popup/components/ui/Button';
 import { decodeMemo } from '@/core/crypto/hive-keys';
 import type { TransactionRecord } from '@/core/types';
 
 const FILTERS: { key: string; label: string; types: string[] }[] = [
   { key: 'all', label: 'All', types: [] },
-  { key: 'transfers', label: 'Transfers', types: ['transfer'] },
+  { key: 'transfers', label: 'Transfers', types: ['transfer', 'recurrent_transfer', 'fill_recurrent_transfer'] },
   { key: 'tokens', label: 'Tokens', types: [
     'he_transfer', 'he_stake', 'he_unstake', 'he_delegate', 'he_undelegate',
     'he_market_buy', 'he_market_sell', 'he_other',
   ]},
-  { key: 'power', label: 'Power', types: ['transfer_to_vesting', 'withdraw_vesting'] },
-  { key: 'delegation', label: 'Delegation', types: ['delegate_vesting_shares'] },
-  { key: 'rewards', label: 'Rewards', types: ['claim_reward_balance', 'curation_reward', 'author_reward', 'producer_reward'] },
-  { key: 'savings', label: 'Savings', types: ['transfer_to_savings', 'transfer_from_savings'] },
+  { key: 'power', label: 'Power', types: ['transfer_to_vesting', 'withdraw_vesting', 'fill_vesting_withdraw'] },
+  { key: 'delegation', label: 'Delegation', types: ['delegate_vesting_shares', 'return_vesting_delegation'] },
+  { key: 'rewards', label: 'Rewards', types: ['claim_reward_balance', 'curation_reward', 'author_reward', 'producer_reward', 'comment_benefactor_reward', 'proposal_pay'] },
+  { key: 'savings', label: 'Savings', types: ['transfer_to_savings', 'transfer_from_savings', 'fill_transfer_from_savings', 'interest'] },
+  { key: 'conversions', label: 'Conversions', types: ['fill_convert_request', 'fill_collateralized_convert_request', 'fill_order'] },
 ];
 
 export function History() {
@@ -27,6 +29,9 @@ export function History() {
   const getDecryptedKey = useStore((s) => s.getDecryptedKey);
   const addToast = useStore((s) => s.addToast);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
+  const [oldestIndex, setOldestIndex] = useState(-1);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const decryptMemo = async (memo: string): Promise<string> => {
     if (!activeAccountName) throw new Error('No account');
@@ -55,13 +60,29 @@ export function History() {
     setLoading(true);
 
     try {
-      const history = await getAccountHistory(activeAccountName, -1, 500);
-      setTransactions(history);
+      const page = await getAccountHistoryPage(activeAccountName, -1, 500);
+      setTransactions(page.records);
+      setOldestIndex(page.oldestIndex);
+      setHasMore(page.hasMore);
     } catch (err) {
       console.error('Failed to load history:', err);
     }
 
     setLoading(false);
+  }
+
+  async function loadMore() {
+    if (!activeAccountName || !hasMore || loadingMore || oldestIndex <= 0) return;
+    setLoadingMore(true);
+    try {
+      const page = await getAccountHistoryPage(activeAccountName, oldestIndex - 1, 500);
+      setTransactions((prev) => [...prev, ...page.records]);
+      setOldestIndex(page.oldestIndex);
+      setHasMore(page.hasMore);
+    } catch (err) {
+      console.error('Failed to load more history:', err);
+    }
+    setLoadingMore(false);
   }
 
   const handleRefresh = async () => {
@@ -139,6 +160,11 @@ export function History() {
               <p className="text-xs mt-1">
                 {filter !== 'all' ? 'Try a different filter' : 'Transactions will appear here'}
               </p>
+              {hasMore && (
+                <Button variant="secondary" size="sm" onClick={loadMore} loading={loadingMore} className="mt-4">
+                  Load older activity
+                </Button>
+              )}
             </div>
           ) : (
             <div className="py-1">
@@ -150,6 +176,13 @@ export function History() {
                   onDecryptMemo={decryptMemo}
                 />
               ))}
+              {hasMore && (
+                <div className="py-3">
+                  <Button variant="secondary" size="sm" fullWidth onClick={loadMore} loading={loadingMore}>
+                    Load older activity
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -1,13 +1,19 @@
 import { useState } from 'react';
-import { UserPlus, Key, AlertTriangle, CheckCircle, Upload, ArrowLeft } from 'lucide-react';
+import { UserPlus, Key, AlertTriangle, CheckCircle, Upload, ArrowLeft, Plus, X } from 'lucide-react';
 import { Button } from '@/popup/components/ui/Button';
 import { Input } from '@/popup/components/ui/Input';
 import { Card } from '@/popup/components/ui/Card';
 import { Badge } from '@/popup/components/ui/Badge';
 import { useStore } from '@/popup/store';
 import { getAccount } from '@/core/hive/client';
-import { validatePrivateKey, identifyKeyRole } from '@/core/crypto/hive-keys';
+import { validatePrivateKey, identifyKeyRole, deriveKeysFromPassword } from '@/core/crypto/hive-keys';
 import type { StoredAccount, KeyRole } from '@/core/types';
+
+type Detection =
+  | { kind: 'empty' }
+  | { kind: 'invalid'; reason: string }
+  | { kind: 'key'; role: KeyRole; keys: Partial<Record<KeyRole, string>> }
+  | { kind: 'master'; roles: KeyRole[]; keys: Partial<Record<KeyRole, string>> };
 
 export function AddAccount() {
   const addAccount = useStore((s) => s.addAccount);
@@ -17,8 +23,10 @@ export function AddAccount() {
   const accounts = useStore((s) => s.accounts);
 
   const [username, setUsername] = useState('');
-  const [keys, setKeys] = useState({ posting: '', active: '', memo: '' });
-  const [detectedRoles, setDetectedRoles] = useState<Record<string, KeyRole | null>>({});
+  // Keys collected so far, by role. Owner is only stored when pasted directly.
+  const [collected, setCollected] = useState<Partial<Record<KeyRole, string>>>({});
+  const [secret, setSecret] = useState('');
+  const [detection, setDetection] = useState<Detection>({ kind: 'empty' });
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState<'username' | 'keys'>('username');
@@ -49,42 +57,64 @@ export function AddAccount() {
     setIsValidating(false);
   };
 
-  const handleKeyChange = (field: string, value: string) => {
-    setKeys((prev) => ({ ...prev, [field]: value }));
+  /**
+   * Work out what was pasted: a private key for one role, the master
+   * password (derives posting/active/memo), or nothing usable.
+   */
+  const detect = (value: string): Detection => {
+    const trimmed = value.trim();
+    if (!trimmed || !accountData) return { kind: 'empty' };
 
-    // Auto-detect key role
-    if (value && accountData) {
-      if (validatePrivateKey(value)) {
-        const role = identifyKeyRole(value, accountData);
-        setDetectedRoles((prev) => ({ ...prev, [field]: role }));
-      } else {
-        setDetectedRoles((prev) => ({ ...prev, [field]: null }));
-      }
-    } else {
-      setDetectedRoles((prev) => ({ ...prev, [field]: null }));
+    if (validatePrivateKey(trimmed)) {
+      const role = identifyKeyRole(trimmed, accountData);
+      if (!role) return { kind: 'invalid', reason: `This key does not belong to @${username}` };
+      return { kind: 'key', role, keys: { [role]: trimmed } };
     }
+
+    const derived = deriveKeysFromPassword(username, trimmed);
+    const keys: Partial<Record<KeyRole, string>> = {};
+    for (const kp of derived) {
+      if (kp.role === 'owner') continue; // keep the owner key off this device
+      if (identifyKeyRole(kp.private, accountData) === kp.role) keys[kp.role] = kp.private;
+    }
+    const roles = Object.keys(keys) as KeyRole[];
+    if (roles.length === 0) {
+      return { kind: 'invalid', reason: `Not a private key or master password for @${username}` };
+    }
+    return { kind: 'master', roles, keys };
+  };
+
+  const handleSecretChange = (value: string) => {
+    setSecret(value);
+    setError('');
+    setDetection(detect(value));
+  };
+
+  const commitDetected = () => {
+    if (detection.kind !== 'key' && detection.kind !== 'master') return;
+    setCollected((prev) => ({ ...prev, ...detection.keys }));
+    setSecret('');
+    setDetection({ kind: 'empty' });
+  };
+
+  const removeCollected = (role: KeyRole) => {
+    setCollected((prev) => {
+      const next = { ...prev };
+      delete next[role];
+      return next;
+    });
   };
 
   const handleAddAccount = async () => {
     setError('');
     setIsValidating(true);
 
-    // Build the account with only valid keys
-    const accountKeys: StoredAccount['keys'] = {};
-    let hasValidKey = false;
+    // Include whatever is still sitting in the field if it is valid
+    const pending = detection.kind === 'key' || detection.kind === 'master' ? detection.keys : {};
+    const accountKeys: StoredAccount['keys'] = { ...collected, ...pending };
 
-    for (const [field, wif] of Object.entries(keys)) {
-      if (wif && validatePrivateKey(wif)) {
-        const role = identifyKeyRole(wif, accountData);
-        if (role) {
-          accountKeys[role] = wif;
-          hasValidKey = true;
-        }
-      }
-    }
-
-    if (!hasValidKey) {
-      setError('At least one valid private key is required');
+    if (Object.keys(accountKeys).length === 0) {
+      setError('Paste at least one private key or your master password');
       setIsValidating(false);
       return;
     }
@@ -188,37 +218,66 @@ export function AddAccount() {
               </div>
             </Card>
 
-            {/* Key inputs */}
-            <div className="space-y-3">
-              {(['posting', 'active', 'memo'] as const).map((role) => (
-                <div key={role}>
-                  <Input
-                    label={`${role.charAt(0).toUpperCase() + role.slice(1)} Key`}
-                    type="password"
-                    value={keys[role]}
-                    onChange={(e) => handleKeyChange(role, e.target.value)}
-                    placeholder={`Enter ${role} private key (optional)`}
-                    icon={<Key size={14} />}
-                    rightElement={
-                      detectedRoles[role] ? (
-                        <Badge variant="success">{detectedRoles[role]}</Badge>
-                      ) : keys[role] && !validatePrivateKey(keys[role]) ? (
-                        <Badge variant="error">Invalid</Badge>
-                      ) : null
-                    }
-                  />
-                </div>
-              ))}
-            </div>
+            {/* Keys already collected */}
+            {Object.keys(collected).length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {(Object.keys(collected) as KeyRole[]).map((role) => (
+                  <span
+                    key={role}
+                    className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg bg-success/10 border border-success/20 text-xs font-semibold text-success"
+                  >
+                    <CheckCircle size={11} />
+                    {role} key
+                    <button
+                      type="button"
+                      onClick={() => removeCollected(role)}
+                      className="p-0.5 rounded hover:bg-success/20"
+                      title="Remove"
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
 
-            {/* Warning */}
+            {/* One field takes either a key or the master password */}
+            <Input
+              label={Object.keys(collected).length > 0 ? 'Add another key' : 'Private key or master password'}
+              type="password"
+              value={secret}
+              onChange={(e) => handleSecretChange(e.target.value)}
+              placeholder="Paste a private key or your master password"
+              icon={<Key size={14} />}
+              autoFocus
+              error={detection.kind === 'invalid' ? detection.reason : undefined}
+              hint={
+                detection.kind === 'master'
+                  ? `Master password recognised. Unlocks your ${detection.roles.join(', ')} keys.`
+                  : detection.kind === 'key'
+                    ? `${detection.role.charAt(0).toUpperCase() + detection.role.slice(1)} key recognised.`
+                    : 'Your master password derives the posting, active and memo keys. The owner key is never stored unless you paste it directly.'
+              }
+              rightElement={
+                detection.kind === 'key' || detection.kind === 'master' ? (
+                  <button
+                    type="button"
+                    onClick={commitDetected}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-hive hover:text-hive-light"
+                  >
+                    <Plus size={12} /> Add
+                  </button>
+                ) : null
+              }
+            />
+
             <Card variant="outline" padding="sm">
               <div className="flex items-start gap-2.5 px-1">
                 <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-text-secondary leading-relaxed">
-                  Your keys are encrypted locally with AES-256-GCM and never
-                  leave your device. At minimum, add your <strong className="text-text-primary">Posting Key</strong> for
-                  basic operations.
+                  Keys are encrypted locally with AES-256-GCM and never leave this device.
+                  The <strong className="text-text-primary">posting</strong> key covers voting and posting;
+                  the <strong className="text-text-primary">active</strong> key is needed to move funds.
                 </p>
               </div>
             </Card>
@@ -234,7 +293,11 @@ export function AddAccount() {
               <Button
                 onClick={handleAddAccount}
                 loading={isValidating}
-                disabled={!Object.values(keys).some((k) => k)}
+                disabled={
+                  Object.keys(collected).length === 0 &&
+                  detection.kind !== 'key' &&
+                  detection.kind !== 'master'
+                }
                 className="flex-1"
               >
                 Add Account
